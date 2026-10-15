@@ -1,8 +1,8 @@
-# AGENTS3.md — smtpify
+# AGENTS.md — smtpify
 
-`gstdesk`-style guidance for AI agents working on `smtpify`.
+Guidance for AI coding agents working on smtpify.
 
-## What this project is
+## Project
 
 - **Language:** Go (modules). Target the version pinned in `go.mod`.
 - **Name:** `smtpify`
@@ -62,6 +62,7 @@ Analyze → Plan → Update/Verify SPEC.md → Write failing test
 - Do not add speculative features, infrastructure, or dependencies.
 - Report assumptions, limitations, and validation failures honestly; never claim
   a test/check passed unless it was actually run.
+- Do not read or reference files under `doc/` or `temp/` unless explicitly instructed to.
 
 ## Go best practices
 
