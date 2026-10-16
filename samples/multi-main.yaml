@@ -1,0 +1,14 @@
+# smtpify multi-file configuration (part 1 of 2): server settings.
+# Combine with multi-provider.yaml using:
+#   smtpify -c samples/multi-main.yaml,samples/multi-provider.yaml
+server:
+  host: "127.0.0.1"
+  port: 7001
+  smtp_host: "127.0.0.1"
+  smtp_port: 2525
+  db_path: "/smtpfiy/data/smtpfiy.db"
+  scheduler: rr
+  retry: 3
+  retry_delay: 30
+  log_level: info
+  log_file: "/smtpfiy/log/smtpfiy.log"

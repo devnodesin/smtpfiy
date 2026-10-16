@@ -1,0 +1,21 @@
+# smtpify single-file configuration.
+# Everything (server + domains) in one file.
+server:
+  host: "127.0.0.1"
+  port: 7001
+  smtp_host: "127.0.0.1"
+  smtp_port: 2525
+  db_path: "/smtpfiy/data/smtpfiy.db"
+  scheduler: order
+  retry: 1
+  retry_delay: 60
+  log_level: info
+  log_file: "/smtpfiy/log/smtpfiy.log"
+
+domains:
+  example.com:
+    providers:
+      - provider: resend
+        api_key: "re_your_api_key_here"
+        limit_daily: 100
+        limit_monthly: 3000

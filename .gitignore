@@ -33,3 +33,7 @@ go.work.sum
 # .vscode/
 temp/
 .kilo/plans/
+
+# Built binary
+/smtpify
+cmd/smtpify/smtpify

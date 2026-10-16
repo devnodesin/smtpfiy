@@ -32,12 +32,11 @@ Use `-c` to specify one or more configuration files. Multiple files are comma-se
 ```bash
 smtpfiy -c /etc/mysmtp.yaml
 
-## OR
-smtpfiy -c /etc/sdeploy/main.yaml,/etc/sdeploy/providers.yaml
+## OR (split into server + domains)
+smtpfiy -c samples/multi-main.yaml,samples/multi-provider.yaml
 
-## OR
-
-smtpfiy -c /sdeploy/smtpfiy.conf,/sdeploy/myconfig.yaml
+## OR (single file)
+smtpfiy -c samples/single.yaml
 ```
 
 `-c` overrides the default configuration paths.
@@ -75,11 +74,11 @@ domains:
 Or the configuration can be split:
 
 ```text
-main.yaml
-providers.yaml
+multi-main.yaml      (server settings)
+multi-provider.yaml  (domains + providers)
 ```
 
-`main.yaml`:
+`multi-main.yaml`:
 
 ```yaml
 server:
@@ -95,13 +94,13 @@ server:
   log_file: "/smtpfiy/log/smtpfiy.log"
 ```
 
-`providers.yaml`:
+`multi-provider.yaml`:
 
 ```yaml
 domains:
   example.com:
     providers:
-      - provider: brevo
+      - provider: resend
         api_key: "..."
         limit_daily: 100
         limit_monthly: 3000

@@ -20,8 +20,8 @@ Example:
 2026-10-16T10:30:00Z INFO  starting smtpfiy
 2026-10-16T10:30:00Z INFO  configuration loaded
 2026-10-16T10:30:00Z INFO  database opened        path=/smtpfiy/data/smtpfiy.db
-2026-10-16T10:30:00Z INFO  SMTP server listening  address=0.0.0.0:2525
-2026-10-16T10:30:00Z INFO  HTTP server listening  address=0.0.0.0:7001
+2026-10-16T10:30:00Z INFO  SMTP server listening  address=127.0.0.1:2525
+2026-10-16T10:30:00Z INFO  HTTP server listening  address=127.0.0.1:7001
 2026-10-16T10:30:00Z INFO  started smtpfiy
 ```
 
