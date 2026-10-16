@@ -1,0 +1,15 @@
+cmd/smtpify/smtpify
+*.db
+*.db-journal
+/smtpfiy/
+/tmp/
+*.log
+.git/
+.kilo/
+temp/
+doc/
+samples/
+README.md
+LICENSE
+Dockerfile
+.dockerignore

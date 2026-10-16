@@ -89,17 +89,15 @@ Spec: `doc/design.md` → Message Lifecycle; `## 10. Message Lifecycle Wiring` i
 - [x] Log events: SMTP / SENT / FAIL (queue activity not logged)
 - [x] Integration test: real SMTP client → queue → delivery → SENT
 
-## 10. Operational / Deployment Hardening (PENDING)
-- [ ] Dockerfile: minimal multi-stage, non-root, volume mounts (data/log/config)
-- [ ] Docker healthcheck using `GET /health`
-- [ ] Non-root runtime; minimal privileges
-- [ ] Final pass: `gofmt`, `go vet`, `go test -race ./...`, no secrets committed
-
----
+## 10. Operational / Deployment Hardening (DONE)
+- [x] Dockerfile: multi-stage, CGO_ENABLED=0, non-root Alpine user, volumes (data/log/config)
+- [x] Exposed ports 2525 (SMTP) / 7001 (HTTP); healthcheck via GET /health
+- [x] Non-root runtime; minimal privileges; no secrets in image
+- [x] SPEC `## 11. Deployment`; runtime smoke test passes (/health, /stats, graceful shutdown)
+- [x] Final pass: gofmt, vet, `go test -race ./...` all green; no secrets committed
 
 ## Notes
-- Only `## Configuration` and `## Logging` currently exist in `SPEC.md`; each
-  pending section above needs a corresponding `SPEC.md` feature section written
-  before implementation begins.
-- Resend is the V1 reference provider; Brevo/Mailgun/SMTP2GO adapters are
-  out of scope for V1 but the adapter interface should accommodate them.
+- All design-doc features (SMTP, Queue, Resend adapter, Scheduler, Retry,
+  HTTP, Lifecycle, Deployment) are now implemented and spec'd in SPEC.md.
+- Resend is the V1 reference provider; Brevo/Mailgun/SMTP2GO adapters are out
+  of scope for V1 but the Provider interface accommodates them.

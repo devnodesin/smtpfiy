@@ -358,3 +358,18 @@ runs them as coordinated background services with graceful shutdown:
 - `FAIL  id:... (<reason>)` on terminal failure.
 
 Queue activity is NOT logged as routine events; inspect via `/stats`.
+
+## 11. Deployment
+
+smtpify is distributed as a small Docker image and runs as a non-root user.
+
+- Multi-stage build: compile `cmd/smtpify` with `CGO_ENABLED=0` (the pure-Go
+  SQLite driver needs no C toolchain), then run on a minimal Alpine image as an
+  unprivileged `smtpfiy` user.
+- Exposed ports: `2525` (SMTP) and `7001` (HTTP).
+- Volumes: `/smtpfiy/data` (queue DB), `/smtpfiy/log` (logs), `/smtpfiy/config`
+  (configuration).
+- Health: a Docker healthcheck calls `GET /health` (see `doc/api.md`).
+- SMTP binds to localhost by default; only set `smtp_host: 0.0.0.0` when the
+  container is deliberately exposed on a network (never as a default).
+- No secrets in the image: API keys come from the mounted config only.
