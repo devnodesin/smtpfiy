@@ -63,12 +63,14 @@ Spec: `doc/design.md` → Provider Selection; `## 7. Provider Selection` in SPEC
 - [x] Fallback restricted to same-domain providers; error if none configured
 - [x] Failing-first TDD
 
-## 7. Retry Engine (PENDING)
-Spec: `doc/design.md` → Retry; config `retry`, `retry_delay`.
-- [ ] Honor max attempts (`retry`); 0 disables retry
-- [ ] Delay between attempts (`retry_delay` seconds)
-- [ ] Respect provider availability + selection strategy on fallback
-- [ ] Update attempts/last_error/failed_at in queue; terminal FAIL after exhaustion
+## 7. Retry Engine (DONE)
+Spec: `doc/design.md` → Retry; `## 8. Retry Engine` in SPEC.md (added).
+- [x] Delivery worker: pick pending, try providers in order, fallback within domain
+- [x] Retryable (`429`/`5xx`/network) retried up to `retry` attempts w/ `retry_delay`
+- [x] Permanent (`401`/`403`/other 4xx) fails immediately (no retry)
+- [x] `retry: 0` disables retries; terminal FAIL after exhaustion; SENT on success
+- [x] `MarkSent`/`MarkFailed(force)` queue updates; context-aware backoff
+- [x] Failing-first TDD (fake provider, retry/delay/exhaustion/permanent)
 
 ## 8. HTTP Server (PENDING)
 Spec: `doc/design.md` → HTTP Server; `doc/api.md`.

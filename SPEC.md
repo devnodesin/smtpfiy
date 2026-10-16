@@ -282,3 +282,31 @@ selection is controlled by `server.scheduler` and implemented in
 - smtpify must never silently change the sender domain to use another provider
   configuration. If a domain has no configured providers, selection returns an
   error.
+
+## 8. Retry Engine
+
+The delivery worker (`cmd/smtpify/delivery.go`) picks pending messages from the
+queue and attempts delivery through the selected provider(s), applying retries.
+
+### Behavior
+
+- For each pending message, the scheduler returns the ordered providers for its
+  domain. The worker tries them in order (primary, then fallback) until one
+  succeeds.
+- A **retryable** failure (`429`, `5xx`, network/timeout) triggers a retry after
+  `server.retry_delay` seconds, up to `server.retry` total attempts. `retry: 0`
+  disables retries (message fails after the first attempt).
+- A **permanent** failure (`401`, `403`, other `4xx`) is NOT retried; the
+  message is marked failed immediately.
+- After all attempts/providers are exhausted without success, the message is
+  marked `failed` (terminal).
+- On success, the message is marked `sent` with the provider name and id.
+- The worker runs as a background goroutine with bounded concurrency. It backs
+  off and respects `context` cancellation for graceful shutdown.
+
+### Queue interaction
+
+- `MarkFailed(id, err, forceFailed=true)` on terminal failure.
+- `MarkFailed(id, err, forceFailed=false)` is NOT used here; instead attempts
+  accumulate via re-queueing (status remains `pending`) until exhausted.
+- `MarkSent(id, provider)` on success.
