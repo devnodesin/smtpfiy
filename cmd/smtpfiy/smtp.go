@@ -119,16 +119,16 @@ func (s *SMTPServer) Start() error {
 // SetupTLS bootstraps the TLS configuration used for STARTTLS. When the server
 // has no TLSConfig assigned, this is a no-op. It either loads the cert/key from
 // the configured PEM files or, when both are empty, generates an in-memory
-// self-signed certificate. On load failure it returns a clear error so startup
-// fails fast.
-func (s *SMTPServer) SetupTLS(cfg SMTPTLSConfig) error {
+// self-signed certificate covering the configured smtp_host plus loopback. On
+// load failure it returns a clear error so startup fails fast.
+func (s *SMTPServer) SetupTLS(cfg SMTPTLSConfig, smtpHost string) error {
 	if !cfg.SMTPTLSEnabled() {
 		return nil
 	}
 	if s.TLSConfig != nil {
 		return nil
 	}
-	tlsCfg, err := buildTLSConfig(cfg, s.Logger)
+	tlsCfg, err := buildTLSConfig(cfg, smtpHost, s.Logger)
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func (s *SMTPServer) SetupTLS(cfg SMTPTLSConfig) error {
 }
 
 // buildTLSConfig loads or generates the TLS config for STARTTLS.
-func buildTLSConfig(cfg SMTPTLSConfig, logger *Logger) (*tls.Config, error) {
+func buildTLSConfig(cfg SMTPTLSConfig, smtpHost string, logger *Logger) (*tls.Config, error) {
 	if cfg.CertFile != "" || cfg.KeyFile != "" {
 		if cfg.CertFile == "" || cfg.KeyFile == "" {
 			return nil, fmt.Errorf("smtp_tls: both cert_file and key_file are required when one is set")
@@ -153,12 +153,12 @@ func buildTLSConfig(cfg SMTPTLSConfig, logger *Logger) (*tls.Config, error) {
 	}
 
 	// Generate an in-memory self-signed certificate.
-	cert, err := generateSelfSignedCert()
+	cert, sans, err := generateSelfSignedCert(smtpHost)
 	if err != nil {
 		return nil, fmt.Errorf("smtp_tls: generating self-signed cert: %w", err)
 	}
 	if logger != nil {
-		logger.Warn("SMTP TLS  self-signed certificate generated (regenerated on every start)")
+		logger.Warn("SMTP TLS  self-signed certificate generated (regenerated on every start)  sans=%v", sans)
 	}
 	return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
 }
@@ -193,37 +193,91 @@ func (s *SMTPServer) writeEhlo(w *bufio.Writer, cmd string, advertiseAuth, adver
 }
 
 // generateSelfSignedCert creates an in-memory self-signed certificate valid for
-// localhost and 127.0.0.1. Suitable for internal, non-published listeners.
-func generateSelfSignedCert() (tls.Certificate, error) {
+// localhost, loopback addresses, and the configured smtp_host when it is a valid
+// DNS name or IP (wildcards and the unspecified address 0.0.0.0 are skipped).
+// It returns the certificate and the list of SANs (names only) for logging.
+func generateSelfSignedCert(smtpHost string) (tls.Certificate, []string, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return tls.Certificate{}, err
+		return tls.Certificate{}, nil, err
 	}
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
-		return tls.Certificate{}, err
+		return tls.Certificate{}, nil, err
 	}
+
+	dnsNames := []string{"localhost"}
+	ipAddresses := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+
+	primary := "localhost"
+	if host := normalizeSAN(smtpHost); host != "" && host != "localhost" {
+		if ip := net.ParseIP(host); ip != nil {
+			ipAddresses = appendUniqueIP(ipAddresses, ip)
+		} else {
+			dnsNames = append(dnsNames, host)
+		}
+		primary = host
+	}
+
 	tmpl := x509.Certificate{
-		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: "smtpfiy", Organization: []string{"smtpfiy"}},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * 365 * 10 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     []string{"localhost"},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: primary, Organization: []string{"smtpfiy"}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * 365 * 10 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+		DNSNames:              dnsNames,
+		IPAddresses:           ipAddresses,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &priv.PublicKey, priv)
 	if err != nil {
-		return tls.Certificate{}, err
+		return tls.Certificate{}, nil, err
 	}
 	keyDER, err := x509.MarshalECPrivateKey(priv)
 	if err != nil {
-		return tls.Certificate{}, err
+		return tls.Certificate{}, nil, err
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
-	return tls.X509KeyPair(certPEM, keyPEM)
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return tls.Certificate{}, nil, err
+	}
+	return cert, sansAsString(&tmpl), nil
+}
+
+// normalizeSAN returns a usable SAN from a configured host: empty for empty or
+// wildcard ("*", "0.0.0.0", "::") values, otherwise the host as-is.
+func normalizeSAN(host string) string {
+	host = strings.TrimSpace(host)
+	switch host {
+	case "", "*", "0.0.0.0", "::", "[::]":
+		return ""
+	}
+	return host
+}
+
+// appendUniqueIP appends ip to the slice when not already present.
+func appendUniqueIP(s []net.IP, ip net.IP) []net.IP {
+	for _, existing := range s {
+		if existing.Equal(ip) {
+			return s
+		}
+	}
+	return append(s, ip)
+}
+
+// sansAsString renders the certificate SANs (DNS names and IPs) for logging,
+// without any key material.
+func sansAsString(tmpl *x509.Certificate) []string {
+	out := make([]string, 0, len(tmpl.DNSNames)+len(tmpl.IPAddresses))
+	out = append(out, tmpl.DNSNames...)
+	for _, ip := range tmpl.IPAddresses {
+		out = append(out, ip.String())
+	}
+	return out
 }
 
 func (s *SMTPServer) handleConn(conn net.Conn) {
