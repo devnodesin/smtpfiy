@@ -52,9 +52,9 @@ A single file can contain everything:
 
 ```yaml
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 7001
-  smtp_host: "0.0.0.0"
+  smtp_host: "127.0.0.1"
   smtp_port: 2525
   db_path: "/smtpfiy/data/smtpfiy.db"
   scheduler: order
@@ -83,9 +83,9 @@ providers.yaml
 
 ```yaml
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 7001
-  smtp_host: "0.0.0.0"
+  smtp_host: "127.0.0.1"
   smtp_port: 2525
   db_path: "/smtpfiy/data/smtpfiy.db"
   scheduler: order
@@ -136,9 +136,9 @@ Global service configuration:
 
 ```yaml
 server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 7001
-  smtp_host: "0.0.0.0"
+  smtp_host: "127.0.0.1"
   smtp_port: 2525
   db_path: "/smtpfiy/data/smtpfiy.db"
   scheduler: order
@@ -148,9 +148,9 @@ server:
   log_file: "/smtpfiy/log/smtpfiy.log"
 ```
 
-- `host` - HTTP bind address (default: 0.0.0.0)
+- `host` - HTTP bind address (default: 127.0.0.1)
 - `port` - HTTP port (default: 7001)
-- `smtp_host` - SMTP bind address (default: 0.0.0.0)
+- `smtp_host` - SMTP bind address (default: 127.0.0.1)
 - `smtp_port` - SMTP port (default: 2525)
 - `db_path` - SQLite database path (default: `/smtpfiy/data/smtpfiy.db`)
 - `scheduler` - Provider selection method (order|rr) (default: order)

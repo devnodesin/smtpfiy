@@ -25,6 +25,28 @@ If `SPEC.md` is silent on a requirement, do not invent it. Update `SPEC.md`
 (or ask the developer) before implementing. Software design and architecture
 live in `SPEC.md`, not here.
 
+> ## ⛔ MANDATORY RULE — SPEC-DRIVEN DEVELOPMENT IS REQUIRED ⛔
+>
+> **SPEC-driven development (SDD) is mandatory and non-negotiable on this
+> project.** No behavior, feature, config key, or design decision may be
+> implemented in code unless it is first written down and agreed in `SPEC.md`.
+> SPEC.md is the single source of truth; the code follows it, never the reverse.
+>
+> This rule applies to **every** change, without exception:
+> - Before writing any production code, the relevant requirement and acceptance
+>   criteria MUST already exist in `SPEC.md` under a dedicated `##` feature
+>   heading (see heading-structure rules below).
+> - If a feature is already implemented but was never spec'd, you MUST update
+>   `SPEC.md` to document it before doing any further work on it — compliance is
+>   restored retroactively, not skipped.
+> - TDD follows SDD: once a feature is spec'd, its implementation MUST start from
+>   a failing test (trivial scaffolding excepted).
+> - Violating this rule (coding before spec'ing, or inventing behavior not in
+>   SPEC.md) is a hard stop. Stop and update SPEC.md first.
+>
+> Treat this as the highest-priority process constraint after direct user
+> instructions.
+
 ### SPEC.md heading structure
 
 To keep the specification easy to maintain and navigate:
@@ -55,12 +77,14 @@ Analyze → Plan → Update/Verify SPEC.md → Write failing test
 
 ### Modularity & reuse
 
-- Strictly modular. One responsibility per package/file.
+- Strictly modular. One responsibility per file/package.
 - DRY — extract a helper/interface before a pattern appears a third time.
-- `cmd/smtpify` is wiring only; business logic lives in `internal/`.
-- **Centralize all fallback defaults** in `internal/config` (a `Defaults` struct);
-  never hardcode default literals in business logic, and reference them via the
-  centralized source in both code and tests. See `SPEC.md` → Architecture.
+- **All application code lives directly under `cmd/smtpify/` as `package main`**,
+  split by responsibility into separate files (`config.go`, `logging.go`,
+  `main.go`, etc.). There is no `internal/` package boundary.
+- **Centralize all fallback defaults** in `cmd/smtpify/config.go` (a `Defaults`
+  struct); never hardcode default literals in business logic, and reference them
+  via the centralized source in both code and tests. See `SPEC.md` → Architecture.
 - Detailed design and directory layout live in `SPEC.md`, not here.
 
 ### Work directly, keep scope tight
