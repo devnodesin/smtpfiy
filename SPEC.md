@@ -262,11 +262,23 @@ type Provider interface {
 ## 7. Provider Selection / Scheduler
 
 Multiple providers may be configured for the same sender domain. Provider
-selection is controlled by `server.scheduler`:
+selection is controlled by `server.scheduler` and implemented in
+`cmd/smtpify/scheduler.go`.
 
-- `order` — try providers in configuration order.
-- `rr` — round-robin selection across the domain's providers.
+### Strategy
 
-Provider fallback is restricted to providers configured for the **same sender
-domain**. smtpify must never silently change the sender domain to use another
-provider configuration.
+- `order` — always start with the first configured provider for the domain;
+  fall back to the next in configuration order after a failure.
+- `rr` — round-robin: maintain per-domain rotating state so successive messages
+  for the same domain spread across its providers.
+
+### Contract
+
+- `Scheduler.Select(domain, providers) []Provider` returns the providers for a
+  domain in the order they should be attempted (primary first, then fallback).
+  For `order` this is the configuration order; for `rr` the list is rotated so
+  the next primary is first.
+- Fallback is restricted to providers configured for the **same sender domain**.
+- smtpify must never silently change the sender domain to use another provider
+  configuration. If a domain has no configured providers, selection returns an
+  error.

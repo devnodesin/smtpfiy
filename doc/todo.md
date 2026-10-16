@@ -56,12 +56,12 @@ Spec: `doc/design.md` → Provider Adapters; `## 6. Provider Adapters` in SPEC.m
 - [x] Timeout via context; TLS/HTTPS enforced
 - [x] No API key / body leakage; failing-first TDD w/ httptest mock
 
-## 6. Provider Selection / Scheduler (PENDING)
-Spec: `doc/design.md` → Provider Selection.
-- [ ] `order` scheduler: try providers in config order for the sender domain
-- [ ] `rr` scheduler: round-robin selection per sender domain
-- [ ] Fallback restricted to providers of the **same sender domain**
-- [ ] Never change sender domain to use another domain's provider config
+## 6. Provider Selection / Scheduler (DONE)
+Spec: `doc/design.md` → Provider Selection; `## 7. Provider Selection` in SPEC.md.
+- [x] `order` scheduler: configuration order, fallback in order
+- [x] `rr` scheduler: per-domain round-robin rotation
+- [x] Fallback restricted to same-domain providers; error if none configured
+- [x] Failing-first TDD
 
 ## 7. Retry Engine (PENDING)
 Spec: `doc/design.md` → Retry; config `retry`, `retry_delay`.
