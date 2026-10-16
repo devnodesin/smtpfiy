@@ -3,12 +3,19 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"strings"
 	"sync"
@@ -55,6 +62,10 @@ type SMTPServer struct {
 	// MaxAuthAttempts is the number of failed AUTH attempts allowed before the
 	// connection is closed. Defaults to Defaults.MaxAuthAttempts.
 	MaxAuthAttempts int
+
+	// TLSConfig, when non-nil, enables STARTTLS. The connection is upgraded to
+	// TLS using this config when the client issues STARTTLS.
+	TLSConfig *tls.Config
 
 	ln net.Listener
 	mu sync.Mutex
@@ -105,19 +116,120 @@ func (s *SMTPServer) Start() error {
 	return nil
 }
 
-func (s *SMTPServer) handleConn(conn net.Conn) {
-	defer conn.Close()
-	r := bufio.NewReader(conn)
-	w := bufio.NewWriter(conn)
-	defer w.Flush()
+// SetupTLS bootstraps the TLS configuration used for STARTTLS. When the server
+// has no TLSConfig assigned, this is a no-op. It either loads the cert/key from
+// the configured PEM files or, when both are empty, generates an in-memory
+// self-signed certificate. On load failure it returns a clear error so startup
+// fails fast.
+func (s *SMTPServer) SetupTLS(cfg SMTPTLSConfig) error {
+	if !cfg.SMTPTLSEnabled() {
+		return nil
+	}
+	if s.TLSConfig != nil {
+		return nil
+	}
+	tlsCfg, err := buildTLSConfig(cfg, s.Logger)
+	if err != nil {
+		return err
+	}
+	s.TLSConfig = tlsCfg
+	return nil
+}
 
-	write := func(format string, args ...interface{}) {
-		fmt.Fprintf(w, format, args...)
-		w.Flush()
+// buildTLSConfig loads or generates the TLS config for STARTTLS.
+func buildTLSConfig(cfg SMTPTLSConfig, logger *Logger) (*tls.Config, error) {
+	if cfg.CertFile != "" || cfg.KeyFile != "" {
+		if cfg.CertFile == "" || cfg.KeyFile == "" {
+			return nil, fmt.Errorf("smtp_tls: both cert_file and key_file are required when one is set")
+		}
+		c, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("smtp_tls: loading cert/key: %w", err)
+		}
+		if logger != nil {
+			logger.Info("SMTP TLS  loaded certificate from %s", cfg.CertFile)
+		}
+		return &tls.Config{Certificates: []tls.Certificate{c}}, nil
 	}
 
-	write("220 smtpfiy SMTP ready\r\n")
+	// Generate an in-memory self-signed certificate.
+	cert, err := generateSelfSignedCert()
+	if err != nil {
+		return nil, fmt.Errorf("smtp_tls: generating self-signed cert: %w", err)
+	}
+	if logger != nil {
+		logger.Warn("SMTP TLS  self-signed certificate generated (regenerated on every start)")
+	}
+	return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
+}
 
+// write writes a formatted line to the buffered SMTP writer and flushes.
+func write(w *bufio.Writer, format string, args ...interface{}) {
+	fmt.Fprintf(w, format, args...)
+	w.Flush()
+}
+
+// writeEhlo writes the EHLO/HELO greeting. For EHLO, when AUTH and/or STARTTLS
+// are configured it emits a multi-line reply: intermediate lines use "250-"
+// and the final line uses "250 " (with no dash). HELO always gets a single-line
+// reply and never advertises extensions.
+func (s *SMTPServer) writeEhlo(w *bufio.Writer, cmd string, advertiseAuth, advertiseTLS bool) {
+	if cmd != "EHLO" {
+		write(w, "250 smtpfiy\r\n")
+		return
+	}
+	lines := []string{"250-smtpfiy"}
+	if advertiseTLS {
+		lines = append(lines, "250-STARTTLS")
+	}
+	if advertiseAuth {
+		lines = append(lines, "250-AUTH PLAIN LOGIN")
+	}
+	// Terminate the multi-line reply with a plain "250 " line.
+	lines = append(lines, "250 OK")
+	for _, l := range lines {
+		write(w, "%s\r\n", l)
+	}
+}
+
+// generateSelfSignedCert creates an in-memory self-signed certificate valid for
+// localhost and 127.0.0.1. Suitable for internal, non-published listeners.
+func generateSelfSignedCert() (tls.Certificate, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "smtpfiy", Organization: []string{"smtpfiy"}},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * 365 * 10 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     []string{"localhost"},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyDER, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	return tls.X509KeyPair(certPEM, keyPEM)
+}
+
+func (s *SMTPServer) handleConn(conn net.Conn) {
+	defer conn.Close()
+
+	// Session state that survives a STARTTLS upgrade (reset after the upgrade).
 	var (
 		from       string
 		recipients []string
@@ -125,123 +237,168 @@ func (s *SMTPServer) handleConn(conn net.Conn) {
 		dataBuf    strings.Builder
 		authed     bool
 		authTries  int
+		isTLS      bool
 	)
 
 	advertiseAuth := s.Auth != nil && s.Auth.SMTPAuthEnabled()
+	advertiseTLS := s.TLSConfig != nil
 	maxTries := s.MaxAuthAttempts
 	if maxTries <= 0 {
 		maxTries = Defaults.MaxAuthAttempts
 	}
 
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			return
-		}
-		line = strings.TrimRight(line, "\r\n")
+	writeGreeting := func(c net.Conn, w *bufio.Writer) {
+		write(w, "220 smtpfiy SMTP ready\r\n")
+	}
 
-		if inData {
-			if line == "." {
-				inData = false
-				raw := dataBuf.String()
-				msg, perr := s.buildMessage(from, recipients, raw)
-				if perr != nil {
-					write("451 error processing message: %s\r\n", perr)
-					from, recipients = "", nil
-					continue
-				}
-				if serr := s.Store.Store(msg); serr != nil {
-					write("451 failed to queue message: %s\r\n", serr)
-					from, recipients = "", nil
-					continue
-				}
-				if s.Logger != nil {
-					s.Logger.Info("SMTP  id:%s (%s -> %s)",
-						msg.ID, msg.From, strings.Join(msg.To, ","))
-				}
-				write("250 OK: message queued as %s\r\n", msg.ID)
-				from, recipients = "", nil
-				continue
-			}
-			dataBuf.WriteString(line)
-			dataBuf.WriteString("\r\n")
-			continue
+	// (Re)start the SMTP session on the current connection. After STARTTLS the
+	// same logical connection continues with a fresh reader/writer/state, but no
+	// new greeting is sent (the client issues EHLO again and expects 250).
+	var startSession func(c net.Conn, sendGreeting bool)
+	startSession = func(c net.Conn, sendGreeting bool) {
+		r := bufio.NewReader(c)
+		w := bufio.NewWriter(c)
+		if sendGreeting {
+			writeGreeting(c, w)
 		}
-
-		cmd, arg := splitCommand(line)
-		switch strings.ToUpper(cmd) {
-		case "HELO", "EHLO":
-			if strings.ToUpper(cmd) == "EHLO" && advertiseAuth {
-				// Multi-line EHLO reply: intermediate lines use "250-" and the
-				// final line uses "250 " (no dash).
-				write("250-smtpfiy\r\n")
-				write("250 AUTH PLAIN LOGIN\r\n")
-			} else {
-				write("250 smtpfiy\r\n")
-			}
-		case "AUTH":
-			if !advertiseAuth {
-				write("503 AUTH not supported\r\n")
-				continue
-			}
-			ok, closeConn := s.handleAuth(write, r, arg, &authed, &authTries, maxTries)
-			_ = ok
-			if closeConn {
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
 				return
 			}
-		case "MAIL":
-			if advertiseAuth && s.Auth.Required && !authed {
-				write("530 Authentication required\r\n")
+			line = strings.TrimRight(line, "\r\n")
+
+			if inData {
+				if line == "." {
+					inData = false
+					raw := dataBuf.String()
+					msg, perr := s.buildMessage(from, recipients, raw)
+					if perr != nil {
+						write(w, "451 error processing message: %s\r\n", perr)
+						from, recipients = "", nil
+						continue
+					}
+					if serr := s.Store.Store(msg); serr != nil {
+						write(w, "451 failed to queue message: %s\r\n", serr)
+						from, recipients = "", nil
+						continue
+					}
+					if s.Logger != nil {
+						s.Logger.Info("SMTP  id:%s (%s -> %s)",
+							msg.ID, msg.From, strings.Join(msg.To, ","))
+					}
+					write(w, "250 OK: message queued as %s\r\n", msg.ID)
+					from, recipients = "", nil
+					continue
+				}
+				dataBuf.WriteString(line)
+				dataBuf.WriteString("\r\n")
 				continue
 			}
-			addr, ok := parsePath(arg)
-			if !ok {
-				write("501 malformed MAIL FROM\r\n")
-				continue
+
+			cmd, arg := splitCommand(line)
+			switch strings.ToUpper(cmd) {
+			case "HELO", "EHLO":
+				s.writeEhlo(w, strings.ToUpper(cmd), advertiseAuth, advertiseTLS && !isTLS)
+			case "STARTTLS":
+				if !advertiseTLS {
+					write(w, "502 STARTTLS not supported\r\n")
+					continue
+				}
+				write(w, "220 2.0.0 Ready to start TLS\r\n")
+				tlsConn := tls.Server(c, s.TLSConfig)
+				if err := tlsConn.Handshake(); err != nil {
+					if s.Logger != nil {
+						s.Logger.Warn("SMTP TLS handshake failed  err=%v", err)
+					}
+					return
+				}
+				if s.Logger != nil {
+					s.Logger.Info("SMTP TLS handshake success")
+				}
+				// Reset SMTP state; client must re-EHLO.
+				from, recipients = "", nil
+				authed = false
+				authTries = 0
+				inData = false
+				dataBuf.Reset()
+				isTLS = true
+				startSession(tlsConn, false)
+				return
+			case "AUTH":
+				if !advertiseAuth {
+					write(w, "503 AUTH not supported\r\n")
+					continue
+				}
+				if advertiseTLS && !isTLS {
+					write(w, "530 5.7.10 Encryption required for AUTH\r\n")
+					continue
+				}
+				ok, closeConn := s.handleAuth(func(f string, a ...interface{}) { write(w, f, a...) }, r, arg, &authed, &authTries, maxTries)
+				_ = ok
+				if closeConn {
+					return
+				}
+			case "MAIL":
+				if advertiseAuth && s.Auth.Required && !authed {
+					if advertiseTLS && !isTLS {
+						write(w, "523 5.7.10 Encryption required for MAIL FROM\r\n")
+						continue
+					}
+					write(w, "530 Authentication required\r\n")
+					continue
+				}
+				addr, ok := parsePath(arg)
+				if !ok {
+					write(w, "501 malformed MAIL FROM\r\n")
+					continue
+				}
+				if err := validateAddress(addr); err != nil {
+					write(w, "501 bad sender address\r\n")
+					continue
+				}
+				from = addr
+				write(w, "250 OK\r\n")
+			case "RCPT":
+				addr, ok := parsePath(arg)
+				if !ok {
+					write(w, "501 malformed RCPT TO\r\n")
+					continue
+				}
+				if err := validateAddress(addr); err != nil {
+					write(w, "501 bad recipient address\r\n")
+					continue
+				}
+				if s.MaxRecipients > 0 && len(recipients) >= s.MaxRecipients {
+					write(w, "452 too many recipients\r\n")
+					continue
+				}
+				recipients = append(recipients, addr)
+				write(w, "250 OK\r\n")
+			case "DATA":
+				if from == "" || len(recipients) == 0 {
+					write(w, "503 need MAIL and RCPT first\r\n")
+					continue
+				}
+				write(w, "354 End data with <CR><LF>.<CR><LF>\r\n")
+				inData = true
+				dataBuf.Reset()
+			case "RSET":
+				from, recipients = "", nil
+				inData = false
+				write(w, "250 OK\r\n")
+			case "NOOP":
+				write(w, "250 OK\r\n")
+			case "QUIT":
+				write(w, "221 Bye\r\n")
+				return
+			default:
+				write(w, "500 command not recognized\r\n")
 			}
-			if err := validateAddress(addr); err != nil {
-				write("501 bad sender address\r\n")
-				continue
-			}
-			from = addr
-			write("250 OK\r\n")
-		case "RCPT":
-			addr, ok := parsePath(arg)
-			if !ok {
-				write("501 malformed RCPT TO\r\n")
-				continue
-			}
-			if err := validateAddress(addr); err != nil {
-				write("501 bad recipient address\r\n")
-				continue
-			}
-			if s.MaxRecipients > 0 && len(recipients) >= s.MaxRecipients {
-				write("452 too many recipients\r\n")
-				continue
-			}
-			recipients = append(recipients, addr)
-			write("250 OK\r\n")
-		case "DATA":
-			if from == "" || len(recipients) == 0 {
-				write("503 need MAIL and RCPT first\r\n")
-				continue
-			}
-			write("354 End data with <CR><LF>.<CR><LF>\r\n")
-			inData = true
-			dataBuf.Reset()
-		case "RSET":
-			from, recipients = "", nil
-			inData = false
-			write("250 OK\r\n")
-		case "NOOP":
-			write("250 OK\r\n")
-		case "QUIT":
-			write("221 Bye\r\n")
-			return
-		default:
-			write("500 command not recognized\r\n")
 		}
 	}
+
+	startSession(conn, true)
 }
 
 // handleAuth processes an AUTH command (PLAIN or LOGIN). It returns whether the

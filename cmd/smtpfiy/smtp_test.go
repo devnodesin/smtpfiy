@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -557,4 +558,257 @@ func waitForMessages(t *testing.T, store *memStore, n int) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("expected %d stored messages, got %d", n, store.count())
+}
+
+// startTLSServer returns a running SMTP server with STARTTLS enabled, using an
+// in-memory self-signed certificate (advertiseAuth controls AUTH advertising).
+func startTLSServer(t *testing.T, store *memStore, auth *SMTPAuthConfig, required bool) (int, func()) {
+	t.Helper()
+	logger := New(&nopWriter{}, nil, "debug")
+	srv := &SMTPServer{
+		Host:            "127.0.0.1",
+		Port:            0,
+		Store:           store,
+		Logger:          logger,
+		AllowedDomains:  map[string]bool{"example.com": true},
+		Auth:            auth,
+		MaxAuthAttempts: Defaults.MaxAuthAttempts,
+	}
+	if err := srv.SetupTLS(SMTPTLSConfig{Enabled: true}); err != nil {
+		t.Fatalf("SetupTLS: %v", err)
+	}
+	ln, err := srv.listen()
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	go srv.serve(ln)
+	return port, func() { srv.Shutdown(context.Background()) }
+}
+
+// clientTLSConfig trusts the server's self-signed cert for the test client.
+func clientTLSConfig(t *testing.T) *tls.Config {
+	t.Helper()
+	// The server generates a fresh self-signed cert per run; the test client
+	// skips verification for the internal-network test topology.
+	return &tls.Config{InsecureSkipVerify: true}
+}
+
+// TestSTARTTLSAdvertisedOnlyWhenEnabled verifies the EHLO advertisement rule.
+func TestSTARTTLSAdvertisedOnlyWhenEnabled(t *testing.T) {
+	// Disabled (no TLSConfig): STARTTLS must not be advertised.
+	store := newMemStore()
+	logger := New(&nopWriter{}, nil, "debug")
+	plain := &SMTPServer{
+		Host: "127.0.0.1", Port: 0, Store: store, Logger: logger,
+		AllowedDomains: map[string]bool{"example.com": true},
+	}
+	ln, err := plain.listen()
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	go plain.serve(ln)
+	defer plain.Shutdown(context.Background())
+	c, err := smtp.Dial(fmtSmtpAddr(port))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		t.Fatal("STARTTLS must not be advertised when TLS disabled")
+	}
+
+	// Enabled: STARTTLS must be advertised.
+	tlsStore := newMemStore()
+	p, stop := startTLSServer(t, tlsStore, nil, false)
+	defer stop()
+	c2, err := smtp.Dial(fmtSmtpAddr(p))
+	if err != nil {
+		t.Fatalf("dial tls: %v", err)
+	}
+	defer c2.Close()
+	if ok, _ := c2.Extension("STARTTLS"); !ok {
+		t.Fatal("STARTTLS must be advertised when TLS enabled")
+	}
+}
+
+// TestSTARTTLSUpgradesAndResetsState verifies STARTTLS upgrades the connection
+// and resets SMTP state (client must re-EHLO).
+func TestSTARTTLSUpgradesAndResetsState(t *testing.T) {
+	store := newMemStore()
+	p, stop := startTLSServer(t, store, nil, false)
+	defer stop()
+
+	c, err := smtp.Dial(fmtSmtpAddr(p))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	if err := c.StartTLS(clientTLSConfig(t)); err != nil {
+		t.Fatalf("StartTLS: %v", err)
+	}
+	// After STARTTLS the client must re-EHLO; mail should still work.
+	if err := c.Mail("sender@example.com"); err != nil {
+		t.Fatalf("mail after starttls: %v", err)
+	}
+	if err := c.Rcpt("rcpt@example.net"); err != nil {
+		t.Fatalf("rcpt: %v", err)
+	}
+	wc, err := c.Data()
+	if err != nil {
+		t.Fatalf("data: %v", err)
+	}
+	msg := "From: sender@example.com\r\nTo: rcpt@example.net\r\nSubject: tls\r\n\r\nbody\r\n"
+	if _, err := wc.Write([]byte(msg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := c.Quit(); err != nil {
+		t.Fatalf("quit: %v", err)
+	}
+	waitForMessages(t, store, 1)
+}
+
+// TestAUTHRejectedBeforeSTARTTLS verifies AUTH requires encryption. A rejected
+// AUTH closes the connection (net/smtp semantics), so the pre-TLS rejection is
+// checked on one connection and the post-TLS success on a fresh connection.
+func TestAUTHRejectedBeforeSTARTTLS(t *testing.T) {
+	store := newMemStore()
+	p, stop := startTLSServer(t, store, authConfig(false, SMTPAuthUser{Username: "resend", Password: "changeme"}), false)
+	defer stop()
+
+	// Pre-TLS: AUTH must be rejected with a 5xx (523).
+	c, err := smtp.Dial(fmtSmtpAddr(p))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	err = c.Auth(smtp.PlainAuth("", "resend", "changeme", "127.0.0.1"))
+	if err == nil {
+		t.Fatal("expected AUTH to be rejected before STARTTLS")
+	}
+
+	// Post-TLS: AUTH must succeed and delivery must work.
+	c2, err := smtp.Dial(fmtSmtpAddr(p))
+	if err != nil {
+		t.Fatalf("dial2: %v", err)
+	}
+	defer c2.Close()
+	if err := c2.StartTLS(clientTLSConfig(t)); err != nil {
+		t.Fatalf("StartTLS: %v", err)
+	}
+	if err := c2.Auth(smtp.PlainAuth("", "resend", "changeme", "127.0.0.1")); err != nil {
+		t.Fatalf("auth after starttls: %v", err)
+	}
+	if err := c2.Mail("sender@example.com"); err != nil {
+		t.Fatalf("mail: %v", err)
+	}
+	if err := c2.Rcpt("rcpt@example.net"); err != nil {
+		t.Fatalf("rcpt: %v", err)
+	}
+	wc, err := c2.Data()
+	if err != nil {
+		t.Fatalf("data: %v", err)
+	}
+	msg := "From: sender@example.com\r\nTo: rcpt@example.net\r\nSubject: atls\r\n\r\nbody\r\n"
+	if _, err := wc.Write([]byte(msg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := c2.Quit(); err != nil {
+		t.Fatalf("quit: %v", err)
+	}
+	waitForMessages(t, store, 1)
+}
+
+// TestRequiredMailRejectedBeforeSTARTTLS verifies required:true MAIL FROM is
+// blocked pre-TLS even though the session is unauthenticated.
+func TestRequiredMailRejectedBeforeSTARTTLS(t *testing.T) {
+	store := newMemStore()
+	p, stop := startTLSServer(t, store, authConfig(true, SMTPAuthUser{Username: "resend", Password: "changeme"}), true)
+	defer stop()
+
+	c, err := smtp.Dial(fmtSmtpAddr(p))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	// MAIL FROM before STARTTLS must be rejected (encryption required).
+	if err := c.Mail("sender@example.com"); err == nil {
+		t.Fatal("expected MAIL FROM rejected before STARTTLS")
+	}
+	// After STARTTLS, AUTH then MAIL must succeed.
+	if err := c.StartTLS(clientTLSConfig(t)); err != nil {
+		t.Fatalf("StartTLS: %v", err)
+	}
+	if err := c.Auth(smtp.PlainAuth("", "resend", "changeme", "127.0.0.1")); err != nil {
+		t.Fatalf("auth: %v", err)
+	}
+	if err := c.Mail("sender@example.com"); err != nil {
+		t.Fatalf("mail after auth: %v", err)
+	}
+	if err := c.Rcpt("rcpt@example.net"); err != nil {
+		t.Fatalf("rcpt: %v", err)
+	}
+	wc, err := c.Data()
+	if err != nil {
+		t.Fatalf("data: %v", err)
+	}
+	msg := "From: sender@example.com\r\nTo: rcpt@example.net\r\nSubject: reqtls\r\n\r\nbody\r\n"
+	if _, err := wc.Write([]byte(msg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := c.Quit(); err != nil {
+		t.Fatalf("quit: %v", err)
+	}
+	waitForMessages(t, store, 1)
+}
+
+// TestSTARTTLSSelfSignedFallback exercises the in-memory self-signed cert path
+// by performing a full STARTTLS + AUTH PLAIN delivery.
+func TestSTARTTLSSelfSignedFallback(t *testing.T) {
+	store := newMemStore()
+	p, stop := startTLSServer(t, store, authConfig(false, SMTPAuthUser{Username: "resend", Password: "changeme"}), false)
+	defer stop()
+
+	c, err := smtp.Dial(fmtSmtpAddr(p))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	if err := c.StartTLS(clientTLSConfig(t)); err != nil {
+		t.Fatalf("StartTLS: %v", err)
+	}
+	if err := c.Auth(smtp.PlainAuth("", "resend", "changeme", "127.0.0.1")); err != nil {
+		t.Fatalf("auth: %v", err)
+	}
+	if err := c.Mail("sender@example.com"); err != nil {
+		t.Fatalf("mail: %v", err)
+	}
+	if err := c.Rcpt("rcpt@example.net"); err != nil {
+		t.Fatalf("rcpt: %v", err)
+	}
+	wc, err := c.Data()
+	if err != nil {
+		t.Fatalf("data: %v", err)
+	}
+	msg := "From: sender@example.com\r\nTo: rcpt@example.net\r\nSubject: selfsigned\r\n\r\nbody\r\n"
+	if _, err := wc.Write([]byte(msg)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := c.Quit(); err != nil {
+		t.Fatalf("quit: %v", err)
+	}
+	waitForMessages(t, store, 1)
 }

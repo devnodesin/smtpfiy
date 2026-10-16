@@ -45,6 +45,15 @@ The on-disk YAML has two top-level blocks:
   required (fully backward compatible). The number of failed AUTH attempts
   before the connection is closed is controlled by the centralized default
   `MaxAuthAttempts` (5).
+- `server.smtp_tls` — optional STARTTLS block. It has three fields: `enabled`
+  (bool, default `false`), `cert_file` (PEM certificate path), and `key_file`
+  (PEM private-key path). When `enabled: true` and both file paths are empty, an
+  in-memory self-signed certificate is generated at startup (logged at `warn`,
+  regenerated on every start); when both paths are set they are loaded, and a
+  load failure fails fast at startup. When `enabled: false` (or absent) the
+  listener stays plaintext and fully backward compatible.
+- `domains` — a map of sender domain to a list of `providers`. Each provider
+  has `provider` (adapter name), `api_key`, `limit_daily`, `limit_monthly`.
 
 When AUTH is configured (at least one `users` entry), the listener advertises
 `AUTH PLAIN LOGIN` in its EHLO (ESMTP) response and accepts the `AUTH` command.
@@ -57,12 +66,20 @@ with `530 Authentication required`. Authentication events are logged at `info`
 (success) and `warn` (failure) without leaking the password; credentials are
 masked in diagnostics.
 
-No TLS/STARTTLS is implemented: AUTH is accepted in cleartext over the internal
-backend network only (the listener binds to `smtp_host`, default `127.0.0.1`).
-This is acceptable given the network isolation; credentials are not secrets in
-this topology. The backend SMTP port is never published to a host port.
-- `domains` — a map of sender domain to a list of `providers`. Each provider
-  has `provider` (adapter name), `api_key`, `limit_daily`, `limit_monthly`.
+**STARTTLS and AUTH ordering.** When `smtp_tls.enabled: true`, the listener
+advertises `STARTTLS` in its EHLO multi-line response and accepts the `STARTTLS`
+command (`220 2.0.0 Ready to start TLS`, then upgrades the connection; SMTP
+state is reset and the client must re-`EHLO`). **AUTH requires STARTTLS when TLS
+is enabled:** an `AUTH` command or a `MAIL FROM` (when `smtp_auth.required:
+true`) issued before the connection is encrypted is rejected with `523 5.7.10
+Encryption required`. TLS handshakes are logged at `info` (success) and `warn`
+(failure); certificate private keys and credentials are never logged.
+
+When `smtp_tls.enabled: false`, no STARTTLS is advertised or accepted and AUTH
+(if configured) proceeds in cleartext over the internal backend network only
+(the listener binds to `smtp_host`, default `127.0.0.1`). This is acceptable
+given the network isolation; credentials are not secrets in this topology. The
+backend SMTP port is never published to a host port.
 
 All fallback defaults are centralized in `cmd/smtpfiy/config.go` (the `Defaults`
 struct). Default `host` and `smtp_host` are `127.0.0.1` (localhost binding).

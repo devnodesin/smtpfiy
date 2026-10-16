@@ -19,6 +19,15 @@ server:
   #   users:
   #     - username: "resend"
   #       password: "changeme"
+  #
+  # Optional STARTTLS. Omit or set enabled: false for a plaintext listener
+  # (default, backward compatible). When enabled: true, AUTH (and MAIL FROM when
+  # smtp_auth.required) require an encrypted session. With empty cert_file and
+  # key_file an in-memory self-signed cert is generated each start.
+  # smtp_tls:
+  #   enabled: false
+  #   cert_file: ""     # PEM cert path; empty + enabled => self-signed generated
+  #   key_file: ""      # PEM key path; empty + enabled => self-signed generated
 
 domains:
   example.com:

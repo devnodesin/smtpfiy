@@ -61,6 +61,9 @@ func run(paths ...string) error {
 		Auth:            &cfg.Server.SMTPAuth,
 		MaxAuthAttempts: Defaults.MaxAuthAttempts,
 	}
+	if err := smtpSrv.SetupTLS(cfg.Server.SMTPTLS); err != nil {
+		return fmt.Errorf("smtp tls setup: %w", err)
+	}
 	if err := smtpSrv.Start(); err != nil {
 		return fmt.Errorf("smtp server error: %w", err)
 	}

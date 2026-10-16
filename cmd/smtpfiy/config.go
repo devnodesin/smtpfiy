@@ -77,11 +77,30 @@ type ServerConfig struct {
 	LogLevel   string         `yaml:"log_level"`
 	LogFile    string         `yaml:"log_file"`
 	SMTPAuth   SMTPAuthConfig `yaml:"smtp_auth"`
+	SMTPTLS    SMTPTLSConfig  `yaml:"smtp_tls"`
 }
 
 // SMTPAuthEnabled reports whether SMTP AUTH is configured (at least one user).
 func (c SMTPAuthConfig) SMTPAuthEnabled() bool {
 	return len(c.Users) > 0
+}
+
+// SMTPTLSConfig controls optional STARTTLS on the SMTP listener.
+type SMTPTLSConfig struct {
+	// Enabled, when true, advertises and enforces STARTTLS. AUTH and (when
+	// smtp_auth.required) MAIL FROM are only permitted on an encrypted session.
+	Enabled bool `yaml:"enabled"`
+	// CertFile is the path to a PEM certificate. When empty together with
+	// KeyFile and Enabled is true, an in-memory self-signed cert is generated.
+	CertFile string `yaml:"cert_file"`
+	// KeyFile is the path to a PEM private key. When empty together with
+	// CertFile and Enabled is true, an in-memory self-signed cert is generated.
+	KeyFile string `yaml:"key_file"`
+}
+
+// SMTPTLSEnabled reports whether STARTTLS is configured.
+func (c SMTPTLSConfig) SMTPTLSEnabled() bool {
+	return c.Enabled
 }
 
 // ProviderConfig describes a single provider configured for a sender domain.
@@ -160,7 +179,8 @@ func loadFile(path string) (*rawConfig, error) {
 func serverIsZero(s ServerConfig) bool {
 	return s.Host == "" && s.Port == 0 && s.SMTPHost == "" && s.SMTPPort == 0 &&
 		s.DBPath == "" && s.Scheduler == "" && s.Retry == 0 && s.RetryDelay == 0 &&
-		s.LogLevel == "" && s.LogFile == "" && len(s.SMTPAuth.Users) == 0 && !s.SMTPAuth.Required
+		s.LogLevel == "" && s.LogFile == "" && len(s.SMTPAuth.Users) == 0 && !s.SMTPAuth.Required &&
+		!s.SMTPTLS.Enabled && s.SMTPTLS.CertFile == "" && s.SMTPTLS.KeyFile == ""
 }
 
 // merge applies a single file's contents into the accumulator. It rejects

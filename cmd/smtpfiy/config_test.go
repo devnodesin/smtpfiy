@@ -77,6 +77,34 @@ server:
 	}
 }
 
+func TestLoadSMTPTLS(t *testing.T) {
+	const tlsServer = `
+server:
+  smtp_tls:
+    enabled: true
+    cert_file: ""
+    key_file: ""
+`
+	path := writeTemp(t, "tls.yaml", tlsServer+domainBlock)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Server.SMTPTLS.SMTPTLSEnabled() {
+		t.Fatal("expected SMTP TLS to be enabled")
+	}
+
+	// Absent smtp_tls means disabled (backward compatible).
+	disabled := writeTemp(t, "notls.yaml", singleServer+domainBlock)
+	cfg2, err := Load(disabled)
+	if err != nil {
+		t.Fatalf("Load notls: %v", err)
+	}
+	if cfg2.Server.SMTPTLS.SMTPTLSEnabled() {
+		t.Fatal("expected SMTP TLS disabled by default")
+	}
+}
+
 func TestLoadMergeMultipleFiles(t *testing.T) {
 	main := writeTemp(t, "main.yaml", singleServer)
 	prov := writeTemp(t, "providers.yaml", domainBlock)
