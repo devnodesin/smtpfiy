@@ -8,14 +8,14 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/smtpify ./cmd/smtpify
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/smtpfiy ./cmd/smtpfiy
 
 # ---- runtime stage ----
 FROM alpine:3.20
-RUN addgroup -S -g 1000 smtpify && adduser -S -u 1000 -G smtpify smtpify
+RUN addgroup -S -g 1000 smtpfiy && adduser -S -u 1000 -G smtpfiy smtpfiy
 WORKDIR /smtpfiy
-COPY --from=build /out/smtpify /usr/local/bin/smtpify
-USER smtpify
+COPY --from=build /out/smtpfiy /usr/local/bin/smtpfiy
+USER smtpfiy
 
 # SMTP (2525) and HTTP (7001) ports.
 EXPOSE 2525 7001
@@ -28,5 +28,5 @@ VOLUME ["/smtpfiy/data", "/smtpfiy/log", "/smtpfiy/config"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -q -O- http://localhost:7001/health || exit 1
 
-ENTRYPOINT ["/usr/local/bin/smtpify"]
+ENTRYPOINT ["/usr/local/bin/smtpfiy"]
 CMD ["-c", "/smtpfiy/config/smtpfiy.yaml"]

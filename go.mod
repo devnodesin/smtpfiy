@@ -1,4 +1,4 @@
-module github.com/smtpify/smtpify
+module github.com/smtpfiy/smtpfiy
 
 go 1.26.0
 

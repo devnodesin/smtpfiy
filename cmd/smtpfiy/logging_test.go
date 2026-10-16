@@ -39,7 +39,7 @@ func TestDebugVisibleAtDebugLevel(t *testing.T) {
 
 func TestDualOutputStdioAndFile(t *testing.T) {
 	dir := t.TempDir()
-	logFile := filepath.Join(dir, "smtpify.log")
+	logFile := filepath.Join(dir, "smtpfiy.log")
 
 	var stdio bytes.Buffer
 	logger, err := NewFromFile(&stdio, logFile, "info")
@@ -79,7 +79,7 @@ func TestSensitiveDataMaskedInOutput(t *testing.T) {
 
 func TestFileWriteErrorHandledGracefully(t *testing.T) {
 	dir := t.TempDir()
-	logFile := filepath.Join(dir, "nope", "smtpify.log")
+	logFile := filepath.Join(dir, "nope", "smtpfiy.log")
 
 	var stdio bytes.Buffer
 	logger, err := NewFromFile(&stdio, logFile, "info")
@@ -94,7 +94,7 @@ func TestFileWriteErrorHandledGracefully(t *testing.T) {
 
 func TestConfigDrivenInitialization(t *testing.T) {
 	dir := t.TempDir()
-	logFile := filepath.Join(dir, "smtpify.log")
+	logFile := filepath.Join(dir, "smtpfiy.log")
 
 	var stdio bytes.Buffer
 	logger, err := NewFromConfig(&stdio, "warn", logFile)

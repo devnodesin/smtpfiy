@@ -1,4 +1,4 @@
-# smtpify single-file configuration.
+# smtpfiy single-file configuration.
 # Everything (server + domains) in one file.
 server:
   host: "127.0.0.1"

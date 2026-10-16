@@ -1,6 +1,6 @@
-# smtpify multi-file configuration (part 1 of 2): server settings.
+# smtpfiy multi-file configuration (part 1 of 2): server settings.
 # Combine with multi-provider.yaml using:
-#   smtpify -c samples/multi-main.yaml,samples/multi-provider.yaml
+#   smtpfiy -c samples/multi-main.yaml,samples/multi-provider.yaml
 server:
   port: 7001
   smtp_port: 2525

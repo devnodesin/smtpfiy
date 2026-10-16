@@ -1,6 +1,6 @@
-# smtpify
+# smtpfiy
 
-A lightweight SMTP-to-API relay. smtpify receives email over local SMTP from
+A lightweight SMTP-to-API relay. smtpfiy receives email over local SMTP from
 legacy applications and containers, queues it in a persistent SQLite store, and
 delivers it through a transactional email provider's REST API (Resend in V1).
 
@@ -23,7 +23,7 @@ and logging rules.
 ## Build
 
 ```bash
-go build -o smtpify ./cmd/smtpify
+go build -o smtpfiy ./cmd/smtpfiy
 ```
 
 ## Configure
@@ -37,16 +37,16 @@ Configuration is one or more YAML files. Examples live in `samples/`:
 Run with a single file:
 
 ```bash
-./smtpify -c samples/single.yaml
+./smtpfiy -c samples/single.yaml
 ```
 
 Or combine multiple files (comma-separated):
 
 ```bash
-./smtpify -c samples/multi-main.yaml,samples/multi-provider.yaml
+./smtpfiy -c samples/multi-main.yaml,samples/multi-provider.yaml
 ```
 
-If `-c` is omitted, smtpify searches the default paths
+If `-c` is omitted, smtpfiy searches the default paths
 (`/etc/smtpfiy.conf`, `/etc/smtpfiy/smtpfiy.yaml`).
 
 ### Key settings
@@ -76,11 +76,11 @@ domains:
 ## Run (Docker)
 
 ```bash
-docker build -t smtpify .
+docker build -t smtpfiy .
 docker run --rm -p 2525:2525 -p 7001:7001 \
   -v $(pwd)/data:/smtpfiy/data \
   -v $(pwd)/config:/smtpfiy/config \
-  smtpify -c /smtpfiy/config/single.yaml
+  smtpfiy -c /smtpfiy/config/single.yaml
 ```
 
 The image runs as a non-root user. A healthcheck calls `GET /health`.

@@ -106,7 +106,7 @@ func (s *SMTPServer) handleConn(conn net.Conn) {
 		w.Flush()
 	}
 
-	write("220 smtpify SMTP ready\r\n")
+	write("220 smtpfiy SMTP ready\r\n")
 
 	var (
 		from       string
@@ -153,7 +153,7 @@ func (s *SMTPServer) handleConn(conn net.Conn) {
 		cmd, arg := splitCommand(line)
 		switch strings.ToUpper(cmd) {
 		case "HELO", "EHLO":
-			write("250 smtpify\r\n")
+			write("250 smtpfiy\r\n")
 		case "MAIL":
 			addr, ok := parsePath(arg)
 			if !ok {

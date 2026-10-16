@@ -35,7 +35,7 @@ temp/
 .kilo/plans/
 
 # Built binary
-/smtpify
-cmd/smtpify/smtpify
+/smtpfiy
+cmd/smtpfiy/smtpfiy
 provider.yaml
 smtpfiy.db

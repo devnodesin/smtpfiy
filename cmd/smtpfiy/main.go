@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 
 	if err := run(configPaths.paths...); err != nil {
-		fmt.Fprintf(os.Stderr, "smtpify: %v\n", err)
+		fmt.Fprintf(os.Stderr, "smtpfiy: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -37,7 +37,7 @@ func run(paths ...string) error {
 	}
 	defer logger.Close()
 
-	logger.Info("starting smtpify")
+	logger.Info("starting smtpfiy")
 	logger.Info("configuration loaded")
 
 	queue, err := OpenQueue(cfg.AbsDBPath())
@@ -83,13 +83,13 @@ func run(paths ...string) error {
 	defer cancel()
 	go workerLoop(ctx, worker, logger)
 
-	logger.Info("started smtpify")
+	logger.Info("started smtpfiy")
 
 	// Signal handling for graceful shutdown.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
-	logger.Info("shutting down smtpify")
+	logger.Info("shutting down smtpfiy")
 	cancel()
 	_ = smtpSrv.Shutdown(context.Background())
 	_ = httpSrv.Shutdown(context.Background())

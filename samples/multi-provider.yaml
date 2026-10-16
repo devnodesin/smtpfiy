@@ -1,6 +1,6 @@
-# smtpify multi-file configuration (part 2 of 2): domains and providers.
+# smtpfiy multi-file configuration (part 2 of 2): domains and providers.
 # Combine with multi-main.yaml using:
-#   smtpify -c samples/multi-main.yaml,samples/multi-provider.yaml
+#   smtpfiy -c samples/multi-main.yaml,samples/multi-provider.yaml
 domains:
   example.com:
     providers:

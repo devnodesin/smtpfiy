@@ -1,7 +1,7 @@
-# SPEC.md — smtpify
+# SPEC.md — smtpfiy
 
 > **Single source of truth.** This document defines the authoritative behavior,
-> architecture, and design of smtpify. All code, tests, and documentation must
+> architecture, and design of smtpfiy. All code, tests, and documentation must
 > conform to it. When it changes, code changes with it. If you find a
 > contradiction between this file and the code, treat this file as correct and
 > update the code (or raise it with the user).
@@ -10,7 +10,7 @@ _Status: evolving. Expand each section as features are agreed._
 
 ## 1. Overview
 
-smtpify is a lightweight proxy that:
+smtpfiy is a lightweight proxy that:
 
 1. Listens for **local, unauthenticated SMTP** traffic from legacy software.
 2. Receives and parses SMTP messages (HELO/EHLO, MAIL FROM, RCPT TO, DATA).
@@ -29,7 +29,7 @@ Goal: let old applications send email through modern providers without code chan
 
 ## 2. Configuration
 
-smtpify is configured via one or more YAML files. Configuration is loaded,
+smtpfiy is configured via one or more YAML files. Configuration is loaded,
 merged, defaulted, then validated before the service starts.
 
 ### Structure
@@ -42,15 +42,15 @@ The on-disk YAML has two top-level blocks:
 - `domains` — a map of sender domain to a list of `providers`. Each provider
   has `provider` (adapter name), `api_key`, `limit_daily`, `limit_monthly`.
 
-All fallback defaults are centralized in `cmd/smtpify/config.go` (the `Defaults`
+All fallback defaults are centralized in `cmd/smtpfiy/config.go` (the `Defaults`
 struct). Default `host` and `smtp_host` are `127.0.0.1` (localhost binding).
-See `cmd/smtpify/config.go` for the authoritative default values.
+See `cmd/smtpfiy/config.go` for the authoritative default values.
 
 ### Architecture
 
-smtpify is a single-binary application. All code — configuration, logging, and
+smtpfiy is a single-binary application. All code — configuration, logging, and
 the future SMTP listener, HTTP server, and provider adapters — lives directly
-under `cmd/smtpify/` as `package main`. There is no `internal/` package
+under `cmd/smtpfiy/` as `package main`. There is no `internal/` package
 boundary; the binary's packages are split by responsibility into separate files
 (`config.go`, `logging.go`, `main.go`, etc.) rather than by directory.
 
@@ -104,11 +104,11 @@ fallback is restricted to providers of the same sender domain.
 > Note: the configuration code existed before this section was written.
 > This section retroactively documents its implemented behavior to restore SDD
 > compliance; the code already conforms to these rules. The config logic now
-> lives in `cmd/smtpify/config.go`.
+> lives in `cmd/smtpfiy/config.go`.
 
 ## 3. Logging
 
-smtpify emits operational logs covering service lifecycle and email delivery.
+smtpfiy emits operational logs covering service lifecycle and email delivery.
 Logging uses the Go standard library only (`log`, `io`, `os`).
 
 ### Output
@@ -132,8 +132,8 @@ timestamp LEVEL message
 ```
 
 with an RFC3339-style timestamp, an upper-case level, and the message. The
-service startup banner (e.g. `starting smtpify`, `configuration loaded`,
-`started smtpify`) is emitted at `info` level. The full set of entry formats
+service startup banner (e.g. `starting smtpfiy`, `configuration loaded`,
+`started smtpfiy`) is emitted at `info` level. The full set of entry formats
 is shown in the Logging section above.
 
 ### Sensitive Data
@@ -149,9 +149,9 @@ Email addresses may appear in logs (e.g. sender/recipient in delivery events).
 
 ## 4. SMTP Server
 
-smtpify accepts email from local applications and containers over SMTP, parses
+smtpfiy accepts email from local applications and containers over SMTP, parses
 each message, and hands a normalized representation to the queue for delivery.
-Implemented in `cmd/smtpify/smtp.go` (package main).
+Implemented in `cmd/smtpfiy/smtp.go` (package main).
 
 ### Listening & binding
 
@@ -204,8 +204,8 @@ no body.
 
 ## 5. Queue (SQLite)
 
-smtpify persists received messages in a SQLite database used as a durable
-message queue and service-state store. Implemented in `cmd/smtpify/queue.go`
+smtpfiy persists received messages in a SQLite database used as a durable
+message queue and service-state store. Implemented in `cmd/smtpfiy/queue.go`
 (package main) using `modernc.org/sqlite` (pure-Go, no cgo).
 
 ### Persistence
@@ -252,9 +252,9 @@ A `messages` table tracks each message and its delivery state:
 
 ## 6. Provider Adapters (Resend, V1)
 
-smtpify delivers queued messages through provider REST APIs. V1 implements a
+smtpfiy delivers queued messages through provider REST APIs. V1 implements a
 single adapter: **Resend**. Adapters implement the `Provider` interface
-(`cmd/smtpify/provider.go`).
+(`cmd/smtpfiy/provider.go`).
 
 ### Interface
 
@@ -283,7 +283,7 @@ type Provider interface {
 
 Multiple providers may be configured for the same sender domain. Provider
 selection is controlled by `server.scheduler` and implemented in
-`cmd/smtpify/scheduler.go`.
+`cmd/smtpfiy/scheduler.go`.
 
 ### Strategy
 
@@ -299,13 +299,13 @@ selection is controlled by `server.scheduler` and implemented in
   For `order` this is the configuration order; for `rr` the list is rotated so
   the next primary is first.
 - Fallback is restricted to providers configured for the **same sender domain**.
-- smtpify must never silently change the sender domain to use another provider
+- smtpfiy must never silently change the sender domain to use another provider
   configuration. If a domain has no configured providers, selection returns an
   error.
 
 ## 8. Retry Engine
 
-The delivery worker (`cmd/smtpify/delivery.go`) picks pending messages from the
+The delivery worker (`cmd/smtpfiy/delivery.go`) picks pending messages from the
 queue and attempts delivery through the selected provider(s), applying retries.
 
 ### Behavior
@@ -333,8 +333,8 @@ queue and attempts delivery through the selected provider(s), applying retries.
 
 ## 9. HTTP Server
 
-smtpify exposes a minimal HTTP API for health and statistics
-(`cmd/smtpify/http.go`). It binds to `server.host` / `server.port` (default
+smtpfiy exposes a minimal HTTP API for health and statistics
+(`cmd/smtpfiy/http.go`). It binds to `server.host` / `server.port` (default
 `127.0.0.1:7001`).
 
 ### Endpoints
@@ -386,7 +386,7 @@ is **never** returned. A Docker healthcheck calls `GET /health` (e.g.
 
 ## 10. Message Lifecycle Wiring
 
-The `main` entrypoint (`cmd/smtpify/main.go`) wires the components together and
+The `main` entrypoint (`cmd/smtpfiy/main.go`) wires the components together and
 runs them as coordinated background services with graceful shutdown:
 
 1. Load and validate configuration (incl. `ValidateLog`).
@@ -412,9 +412,9 @@ Queue activity is NOT logged as routine events; inspect via `/stats`.
 
 ## 11. Deployment
 
-smtpify is distributed as a small Docker image and runs as a non-root user.
+smtpfiy is distributed as a small Docker image and runs as a non-root user.
 
-- Multi-stage build: compile `cmd/smtpify` with `CGO_ENABLED=0` (the pure-Go
+- Multi-stage build: compile `cmd/smtpfiy` with `CGO_ENABLED=0` (the pure-Go
   SQLite driver needs no C toolchain), then run on a minimal Alpine image as an
   unprivileged `smtpfiy` user. The build base image `golang:<version>-alpine`
   MUST track (or exceed) the `go` directive in `go.mod` — a too-old builder

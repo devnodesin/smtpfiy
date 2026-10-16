@@ -1,11 +1,11 @@
-# AGENTS.md — smtpify
+# AGENTS.md — smtpfiy
 
-Guidance for AI coding agents working on smtpify.
+Guidance for AI coding agents working on smtpfiy.
 
 ## Project
 
 - **Language:** Go (modules). Target the version pinned in `go.mod`.
-- **Name:** `smtpify`
+- **Name:** `smtpfiy`
 - **Purpose:** A lightweight proxy that intercepts local, unauthenticated SMTP traffic
   from legacy software and translates it into modern REST API payloads for
   transactional email providers (Brevo, Resend, Mailgun).
@@ -79,10 +79,10 @@ Analyze → Plan → Update/Verify SPEC.md → Write failing test
 
 - Strictly modular. One responsibility per file/package.
 - DRY — extract a helper/interface before a pattern appears a third time.
-- **All application code lives directly under `cmd/smtpify/` as `package main`**,
+- **All application code lives directly under `cmd/smtpfiy/` as `package main`**,
   split by responsibility into separate files (`config.go`, `logging.go`,
   `main.go`, etc.). There is no `internal/` package boundary.
-- **Centralize all fallback defaults** in `cmd/smtpify/config.go` (a `Defaults`
+- **Centralize all fallback defaults** in `cmd/smtpfiy/config.go` (a `Defaults`
   struct); never hardcode default literals in business logic, and reference them
   via the centralized source in both code and tests. See `SPEC.md` → Architecture.
 - Detailed design and directory layout live in `SPEC.md`, not here.
