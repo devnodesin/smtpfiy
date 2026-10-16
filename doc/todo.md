@@ -72,14 +72,13 @@ Spec: `doc/design.md` → Retry; `## 8. Retry Engine` in SPEC.md (added).
 - [x] `MarkSent`/`MarkFailed(force)` queue updates; context-aware backoff
 - [x] Failing-first TDD (fake provider, retry/delay/exhaustion/permanent)
 
-## 8. HTTP Server (PENDING)
-Spec: `doc/design.md` → HTTP Server; `doc/api.md`.
-- [ ] Bind to `host`/`port` (default 127.0.0.1:7001)
-- [ ] `GET /health` → `{ "status": "ok" }` (200) / `5xx` when unhealthy; lightweight
-- [ ] `GET /stats` → uptime, database path/size, message counts, recent items
-      (id, from, to, subject, provider, status, attempts, timestamps, last_error)
-- [ ] `/stats` MUST NOT return email body; no secrets exposed
-- [ ] Graceful shutdown; bound concurrency
+## 8. HTTP Server (DONE)
+Spec: `doc/design.md` → HTTP Server; `## 9. HTTP Server` in SPEC.md (added).
+- [x] Bind to `host`/`port` (default 127.0.0.1:7001)
+- [x] `GET /health` → `200 {"status":"ok"}` (5xx when unhealthy); Docker-friendly
+- [x] `GET /stats` → uptime, database(path/size), message counts, recent items
+- [x] `/stats` omits email body and secrets; graceful shutdown; timeouts
+- [x] Failing-first TDD (httptest for both endpoints)
 
 ## 9. Message Lifecycle Wiring (PENDING)
 Spec: `doc/design.md` → Message Lifecycle.

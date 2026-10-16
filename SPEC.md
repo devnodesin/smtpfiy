@@ -310,3 +310,25 @@ queue and attempts delivery through the selected provider(s), applying retries.
 - `MarkFailed(id, err, forceFailed=false)` is NOT used here; instead attempts
   accumulate via re-queueing (status remains `pending`) until exhausted.
 - `MarkSent(id, provider)` on success.
+
+## 9. HTTP Server
+
+smtpify exposes a minimal HTTP API for health and statistics
+(`cmd/smtpify/http.go`). It binds to `server.host` / `server.port` (default
+`127.0.0.1:7001`).
+
+### Endpoints
+
+- `GET /health` — returns `200 {"status":"ok"}` when the service is operating
+  normally, or a `5xx {"status":"error"}` when it cannot (lightweight; intended
+  for Docker health checks).
+- `GET /stats` — returns a JSON object with `uptime`, `database` (path, size),
+  `messages` (total/pending/processing/sent/failed counts) and `items` (recent
+  messages: id, from, to, subject, provider, status, attempts, timestamps,
+  last_error). The email body is **never** included, and no secrets are exposed.
+
+### Operation
+
+- The server runs as a background goroutine; supports graceful shutdown via
+  `http.Server.Shutdown` on context cancellation.
+- Concurrency is bounded; request timeouts are applied.
