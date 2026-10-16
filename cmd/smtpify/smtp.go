@@ -26,6 +26,7 @@ type Message struct {
 	Headers   map[string]string
 	RawSize   int
 	Domain    string
+	Status    string
 	CreatedAt time.Time
 }
 

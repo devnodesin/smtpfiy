@@ -36,14 +36,16 @@ Spec: `doc/design.md` → SMTP Server; `## 4. SMTP Server` in SPEC.md (added).
 - [x] Prevent CRLF/header injection; canonicalize addresses at boundary
 - [x] Hand parsed message to the queue (store) stage (end-to-end test w/ real client)
 
-## 4. SQLite Queue (PENDING)
-Spec: `doc/design.md` → SQLite Queue; `## Queue` in SPEC.md (to add).
-- [ ] Open/create SQLite DB at configured `db_path` (persistent across restarts)
-- [ ] Schema: messages table (id, from, to, subject, body, provider state,
-      status, attempts, created_at, sent_at, failed_at, last_error, domain)
-- [ ] Store received message; track status: pending/processing/sent/failed
-- [ ] Persist retry state and per-provider delivery state
-- [ ] Expose query API for `/stats` (no email body returned there)
+## 4. SQLite Queue (DONE)
+Spec: `doc/design.md` → SQLite Queue; `## 5. Queue` in SPEC.md (added).
+- [x] Open/create SQLite DB at `db_path` (modernc.org/sqlite, pure-Go/no cgo)
+- [x] Schema: messages table (id, from, to, subject, bodies, domain, status,
+      provider, attempts, last_error, created_at, sent_at, failed_at)
+- [x] Store received message (status pending); satisfies SMTP `MessageStore`
+- [x] Pending() for delivery worker; MarkSent / MarkFailed(force)
+- [x] Stats() for /stats — counts + items, NO body returned
+- [x] Persistence across restarts; parent dir creation
+- [x] Failing-first TDD; `go test -race` green
 
 ## 5. Provider Adapters — Resend (PENDING, FIRST PROVIDER)
 Spec: `doc/design.md` → Provider Adapters; `## Provider Adapters` in SPEC.md (to add).

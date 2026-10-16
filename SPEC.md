@@ -181,3 +181,51 @@ On accept, the server emits an `SMTP` log event at `info` level using the
 format from `doc/logging.md`, e.g.
 `SMTP  id:8f21a4 (alerts@example.com -> user@example.net)`, with addresses but
 no body.
+
+## 5. Queue (SQLite)
+
+smtpify persists received messages in a SQLite database used as a durable
+message queue and service-state store. Implemented in `cmd/smtpify/queue.go`
+(package main) using `modernc.org/sqlite` (pure-Go, no cgo).
+
+### Persistence
+
+- The database file is at `server.db_path` (default `/smtpfiy/data/smtpfiy.db`).
+- Messages survive container/service restarts.
+- The schema is created automatically on open if it does not exist.
+
+### Schema
+
+A `messages` table tracks each message and its delivery state:
+
+- `id` TEXT PRIMARY KEY (short message id)
+- `from_addr` TEXT
+- `to_addrs` TEXT (comma-separated; envelope recipients)
+- `subject` TEXT
+- `text_body` TEXT
+- `html_body` TEXT
+- `domain` TEXT (sender domain used for provider selection)
+- `status` TEXT — one of `pending`, `processing`, `sent`, `failed`
+- `provider` TEXT — last/selected provider name
+- `attempts` INTEGER
+- `last_error` TEXT
+- `created_at` TEXT (RFC3339)
+- `sent_at` TEXT (RFC3339, nullable)
+- `failed_at` TEXT (RFC3339, nullable)
+
+### Operations
+
+- `Store(Message)` inserts a new row with status `pending`.
+- `Pending()` returns messages with status `pending`/`processing` eligible for
+  delivery (used by the delivery worker).
+- `MarkSent(id, provider)` sets status `sent`, records provider and `sent_at`.
+- `MarkFailed(id, err)` increments `attempts`, records `last_error` and
+  `failed_at`, and sets status `failed` only after retries are exhausted
+  (otherwise keeps it `pending` for retry — see `## 7. Retry`).
+- `Stats()` returns counts by status and recent items for `/stats`
+  (NO email body is returned by `Stats()`).
+
+### Security
+
+- Email bodies are stored but never returned by `Stats()` or any HTTP endpoint.
+- API keys are never written to the database.
