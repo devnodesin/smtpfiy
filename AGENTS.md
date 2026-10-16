@@ -25,6 +25,16 @@ If `SPEC.md` is silent on a requirement, do not invent it. Update `SPEC.md`
 (or ask the developer) before implementing. Software design and architecture
 live in `SPEC.md`, not here.
 
+### SPEC.md heading structure
+
+To keep the specification easy to maintain and navigate:
+
+- **No heading deeper than level 3 (`###`).** Never use `####` or below.
+- **Each feature has its own level-2 (`##`) heading.** One feature per `##` section.
+- **Keep at most 3 level-3 (`###`) headings under any single feature.** If a
+  feature needs more than 3 subsections, split it into multiple `##` features
+  or fold the detail into prose.
+
 ## Process rules (MANDATORY)
 
 ### Specification-First, then TDD
