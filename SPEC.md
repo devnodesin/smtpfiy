@@ -80,6 +80,27 @@ Before use, the merged configuration is validated:
 - API keys are masked (`***`) wherever configuration is rendered for diagnostics;
   keys are never logged in cleartext.
 
+### Reference
+
+`server` fields and their defaults:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `host` | `127.0.0.1` | HTTP bind address (localhost by default; never `0.0.0.0` unless explicitly set) |
+| `port` | `7001` | HTTP port |
+| `smtp_host` | `127.0.0.1` | SMTP bind address (localhost by default) |
+| `smtp_port` | `2525` | SMTP port |
+| `db_path` | `/smtpfiy/data/smtpfiy.db` | SQLite database path |
+| `scheduler` | `order` | Provider selection: `order` \| `rr` |
+| `retry` | `1` | Max delivery attempts; `0` disables retries |
+| `retry_delay` | `60` | Seconds between retries |
+| `log_level` | `info` | `debug` \| `info` \| `warn` \| `error` |
+| `log_file` | `/smtpfiy/log/smtpfiy.log` | Log file path (dual write with stdio) |
+
+`domains` maps each sender domain to a list of providers; each provider has
+`provider` (adapter name), `api_key`, `limit_daily`, `limit_monthly`. Provider
+fallback is restricted to providers of the same sender domain.
+
 > Note: the configuration code existed before this section was written.
 > This section retroactively documents its implemented behavior to restore SDD
 > compliance; the code already conforms to these rules. The config logic now
@@ -112,8 +133,8 @@ timestamp LEVEL message
 
 with an RFC3339-style timestamp, an upper-case level, and the message. The
 service startup banner (e.g. `starting smtpify`, `configuration loaded`,
-`started smtpify`) is emitted at `info` level. See `doc/logging.md` for the
-full set of entry formats.
+`started smtpify`) is emitted at `info` level. The full set of entry formats
+is shown in the Logging section above.
 
 ### Sensitive Data
 
@@ -177,8 +198,7 @@ during the SMTP transaction.
 
 ### Logging
 
-On accept, the server emits an `SMTP` log event at `info` level using the
-format from `doc/logging.md`, e.g.
+On accept, the server emits an `SMTP` log event at `info` level, e.g.
 `SMTP  id:8f21a4 (alerts@example.com -> user@example.net)`, with addresses but
 no body.
 
@@ -333,6 +353,37 @@ smtpify exposes a minimal HTTP API for health and statistics
   `http.Server.Shutdown` on context cancellation.
 - Concurrency is bounded; request timeouts are applied.
 
+### `/stats` response shape
+
+```json
+{
+  "uptime": "1h23m",
+  "database": { "path": "/smtpfiy/data/smtpfiy.db", "size": "2.4 MB" },
+  "messages": {
+    "total": 120, "pending": 4, "processing": 1, "sent": 112, "failed": 3
+  },
+  "items": [
+    {
+      "id": "8f21a4", "from": "alerts@example.com", "to": ["user@example.net"],
+      "subject": "Server Alert", "provider": "resend", "status": "sent",
+      "attempts": 1, "created_at": "2026-10-16T10:30:00Z",
+      "sent_at": "2026-10-16T10:30:02Z"
+    },
+    {
+      "id": "b73d11", "from": "alerts@example.com", "to": ["admin@example.net"],
+      "subject": "Daily Report", "provider": "brevo", "status": "failed",
+      "attempts": 2, "created_at": "2026-10-16T10:40:00Z",
+      "last_error": "connection timeout"
+    }
+  ]
+}
+```
+
+Each item may include `id`, `from`, `to`, `subject`, `provider`, `status`,
+`attempts`, `created_at`, `sent_at`, `failed_at`, `last_error`. The email body
+is **never** returned. A Docker healthcheck calls `GET /health` (e.g.
+`curl -f http://localhost:7001/health`).
+
 ## 10. Message Lifecycle Wiring
 
 The `main` entrypoint (`cmd/smtpify/main.go`) wires the components together and
@@ -369,7 +420,7 @@ smtpify is distributed as a small Docker image and runs as a non-root user.
 - Exposed ports: `2525` (SMTP) and `7001` (HTTP).
 - Volumes: `/smtpfiy/data` (queue DB), `/smtpfiy/log` (logs), `/smtpfiy/config`
   (configuration).
-- Health: a Docker healthcheck calls `GET /health` (see `doc/api.md`).
+- Health: a Docker healthcheck calls `GET /health` (see `## 9. HTTP Server`).
 - SMTP binds to localhost by default; only set `smtp_host: 0.0.0.0` when the
   container is deliberately exposed on a network (never as a default).
 - No secrets in the image: API keys come from the mounted config only.

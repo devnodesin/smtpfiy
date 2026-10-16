@@ -1,9 +1,9 @@
 # smtpify — Implementation TODO
 
-Tracking document for pending and completed work derived from `doc/design.md`,
-`doc/api.md`, `doc/config.md`, and `doc/logging.md`. Completed items reflect the
-current codebase state (config + logging implemented per `SPEC.md` `## Configuration`
-and `## Logging`).
+Tracking document for pending and completed work. Completed items reflect the
+current codebase state. The former `doc/design.md`, `doc/api.md`,
+`doc/config.md`, and `doc/logging.md` were folded into `SPEC.md` (which is now
+the single source of truth) and those files were removed.
 
 > Process rule: per `AGENTS.md`, every feature below MUST be spec'd in `SPEC.md`
 > (with acceptance criteria) **before** code, and MUST start from a failing test

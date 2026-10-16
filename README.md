@@ -17,8 +17,8 @@ delivers it through a transactional email provider's REST API (Resend in V1).
   API keys are ever logged.
 - Small, non-root Docker image.
 
-See `SPEC.md` for the authoritative behavior and `doc/` for detailed design,
-configuration, API, and logging references.
+See `SPEC.md` for the authoritative behavior, configuration reference, HTTP API,
+and logging rules.
 
 ## Build
 
