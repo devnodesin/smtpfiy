@@ -80,12 +80,14 @@ Spec: `doc/design.md` → HTTP Server; `## 9. HTTP Server` in SPEC.md (added).
 - [x] `/stats` omits email body and secrets; graceful shutdown; timeouts
 - [x] Failing-first TDD (httptest for both endpoints)
 
-## 9. Message Lifecycle Wiring (PENDING)
-Spec: `doc/design.md` → Message Lifecycle.
-- [ ] End-to-end flow: SMTP receive → validate/parse → store → select provider
-      → send → success(SENT) / failure(retry→next provider→FAIL)
-- [ ] Emit `SMTP`, `SENT`, `FAIL` log events per `doc/logging.md`
-- [ ] Queue activity NOT logged as normal events (inspect via `/stats`)
+## 9. Message Lifecycle Wiring (DONE)
+Spec: `doc/design.md` → Message Lifecycle; `## 10. Message Lifecycle Wiring` in SPEC.md (added).
+- [x] `main.go` wires config → logger → queue → SMTP → HTTP → delivery worker
+- [x] SMTP stores to queue; delivery worker processes pending with retry
+- [x] `configResolver` resolves per-domain providers (same-domain fallback)
+- [x] Graceful shutdown on SIGINT/SIGTERM; startup errors exit non-zero
+- [x] Log events: SMTP / SENT / FAIL (queue activity not logged)
+- [x] Integration test: real SMTP client → queue → delivery → SENT
 
 ## 10. Operational / Deployment Hardening (PENDING)
 - [ ] Dockerfile: minimal multi-stage, non-root, volume mounts (data/log/config)

@@ -332,3 +332,29 @@ smtpify exposes a minimal HTTP API for health and statistics
 - The server runs as a background goroutine; supports graceful shutdown via
   `http.Server.Shutdown` on context cancellation.
 - Concurrency is bounded; request timeouts are applied.
+
+## 10. Message Lifecycle Wiring
+
+The `main` entrypoint (`cmd/smtpify/main.go`) wires the components together and
+runs them as coordinated background services with graceful shutdown:
+
+1. Load and validate configuration (incl. `ValidateLog`).
+2. Initialize the logger from config (`log_level`, `log_file`).
+3. Open the SQLite queue at `db_path`.
+4. Build the `Scheduler` and a `ProviderResolver` that resolves each domain's
+   configured providers (V1: `resend`).
+5. Start the SMTP server (binds `smtp_host`/`smtp_port`); on `DATA` it stores
+   the parsed message via the queue and emits an `SMTP` log event.
+6. Start the HTTP server (binds `host`/`port`) for `/health` and `/stats`.
+7. Start the delivery worker loop: repeatedly take pending messages and attempt
+   delivery (see `## 8. Retry Engine`), emitting `SENT`/`FAIL` log events.
+8. On `SIGINT`/`SIGTERM`, stop accepting new SMTP/HTTP connections and drain in
+   flight work before exiting non-zero on startup error or zero on clean stop.
+
+### Logging events
+
+- `SMTP  id:... (from -> to)` on receive.
+- `SENT  id:... via <provider> (from -> to)` on success.
+- `FAIL  id:... (<reason>)` on terminal failure.
+
+Queue activity is NOT logged as routine events; inspect via `/stats`.
