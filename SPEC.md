@@ -416,7 +416,12 @@ smtpify is distributed as a small Docker image and runs as a non-root user.
 
 - Multi-stage build: compile `cmd/smtpify` with `CGO_ENABLED=0` (the pure-Go
   SQLite driver needs no C toolchain), then run on a minimal Alpine image as an
-  unprivileged `smtpfiy` user.
+  unprivileged `smtpfiy` user. The build base image `golang:<version>-alpine`
+  MUST track (or exceed) the `go` directive in `go.mod` — a too-old builder
+  fails at `go mod download` with `go.mod requires go >= ...`.
+- Health: a Docker `HEALTHCHECK` calls `GET /health` (see `## 9. HTTP Server`);
+  the image uses `wget -q -O- http://localhost:7001/health` since Alpine ships
+  BusyBox `wget` (not `curl`) by default.
 - Exposed ports: `2525` (SMTP) and `7001` (HTTP).
 - Volumes: `/smtpfiy/data` (queue DB), `/smtpfiy/log` (logs), `/smtpfiy/config`
   (configuration).
