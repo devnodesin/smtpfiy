@@ -11,6 +11,14 @@ server:
   retry_delay: 60
   log_level: info
   log_file: "/smtpfiy/log/smtpfiy.log"
+  # Optional SMTP AUTH (PLAIN/LOGIN). Omit or leave users empty for a fully
+  # unauthenticated listener (default, backward compatible). When at least one
+  # user is configured, the EHLO response advertises "AUTH PLAIN LOGIN".
+  # smtp_auth:
+  #   required: false   # if true, reject MAIL FROM before AUTH with 530
+  #   users:
+  #     - username: "resend"
+  #       password: "changeme"
 
 domains:
   example.com:

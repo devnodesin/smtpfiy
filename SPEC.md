@@ -39,6 +39,28 @@ The on-disk YAML has two top-level blocks:
 - `server` — global service settings: `host`, `port`, `smtp_host`,
   `smtp_port`, `db_path`, `scheduler`, `retry`, `retry_delay`, `log_level`,
   `log_file`.
+- `server.smtp_auth` — optional SMTP AUTH block (PLAIN/LOGIN). It has two
+  fields: `required` (bool) and `users` (list of `{username, password}`). When
+  `users` is empty/absent, AUTH is not advertised and no authentication is
+  required (fully backward compatible). The number of failed AUTH attempts
+  before the connection is closed is controlled by the centralized default
+  `MaxAuthAttempts` (5).
+
+When AUTH is configured (at least one `users` entry), the listener advertises
+`AUTH PLAIN LOGIN` in its EHLO (ESMTP) response and accepts the `AUTH` command.
+`HELO` clients receive no AUTH advertisement. Credentials are compared using
+constant-time comparison for the password. On success the server replies
+`235 Authentication successful`; on failure `535 Authentication failed`. After
+`MaxAuthAttempts` failed attempts the connection is closed with `421`. When
+`required: true` and the session has not authenticated, `MAIL FROM` is rejected
+with `530 Authentication required`. Authentication events are logged at `info`
+(success) and `warn` (failure) without leaking the password; credentials are
+masked in diagnostics.
+
+No TLS/STARTTLS is implemented: AUTH is accepted in cleartext over the internal
+backend network only (the listener binds to `smtp_host`, default `127.0.0.1`).
+This is acceptable given the network isolation; credentials are not secrets in
+this topology. The backend SMTP port is never published to a host port.
 - `domains` — a map of sender domain to a list of `providers`. Each provider
   has `provider` (adapter name), `api_key`, `limit_daily`, `limit_monthly`.
 

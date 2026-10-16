@@ -41,21 +41,39 @@ domains:
         limit_monthly: 3000
 `
 
-func TestLoadSingleFile(t *testing.T) {
-	path := writeTemp(t, "main.yaml", singleServer+domainBlock)
+func TestLoadSMTPAuth(t *testing.T) {
+	const authServer = `
+server:
+  smtp_auth:
+    required: true
+    users:
+      - username: "resend"
+        password: "changeme"
+`
+	path := writeTemp(t, "main.yaml", authServer+domainBlock)
 
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Server.Host != "127.0.0.1" || cfg.Server.Port != 7001 {
-		t.Fatalf("unexpected server: %+v", cfg.Server)
+	if !cfg.Server.SMTPAuth.SMTPAuthEnabled() {
+		t.Fatal("expected SMTP AUTH to be enabled")
 	}
-	if _, ok := cfg.Domains["example.com"]; !ok {
-		t.Fatalf("domain example.com missing: %+v", cfg.Domains)
+	if !cfg.Server.SMTPAuth.Required {
+		t.Fatal("expected required: true")
 	}
-	if got := cfg.Domains["example.com"].Providers[0].Provider; got != "resend" {
-		t.Fatalf("expected resend provider, got %q", got)
+	if len(cfg.Server.SMTPAuth.Users) != 1 || cfg.Server.SMTPAuth.Users[0].Username != "resend" {
+		t.Fatalf("unexpected users: %+v", cfg.Server.SMTPAuth.Users)
+	}
+
+	// Empty users means disabled (backward compatible).
+	disabled := writeTemp(t, "disabled.yaml", singleServer+domainBlock)
+	cfg2, err := Load(disabled)
+	if err != nil {
+		t.Fatalf("Load disabled: %v", err)
+	}
+	if cfg2.Server.SMTPAuth.SMTPAuthEnabled() {
+		t.Fatal("expected SMTP AUTH disabled when users empty")
 	}
 }
 

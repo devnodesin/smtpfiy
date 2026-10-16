@@ -13,28 +13,30 @@ import (
 // Defaults holds all fallback default values. Business logic must reference
 // these via the Defaults struct rather than hardcoding literals.
 var Defaults = struct {
-	Host        string
-	Port        int
-	SMTPHost    string
-	SMTPPort    int
-	DBPath      string
-	Scheduler   string
-	Retry       int
-	RetryDelay  int
-	LogLevel    string
-	LogFile     string
-	SearchPaths []string
+	Host            string
+	Port            int
+	SMTPHost        string
+	SMTPPort        int
+	DBPath          string
+	Scheduler       string
+	Retry           int
+	RetryDelay      int
+	LogLevel        string
+	LogFile         string
+	SearchPaths     []string
+	MaxAuthAttempts int
 }{
-	Host:       "127.0.0.1",
-	Port:       7001,
-	SMTPHost:   "127.0.0.1",
-	SMTPPort:   2525,
-	DBPath:     "/smtpfiy/data/smtpfiy.db",
-	Scheduler:  "order",
-	Retry:      1,
-	RetryDelay: 60,
-	LogLevel:   "info",
-	LogFile:    "/smtpfiy/log/smtpfiy.log",
+	Host:            "127.0.0.1",
+	Port:            7001,
+	SMTPHost:        "127.0.0.1",
+	SMTPPort:        2525,
+	DBPath:          "/smtpfiy/data/smtpfiy.db",
+	Scheduler:       "order",
+	Retry:           1,
+	RetryDelay:      60,
+	LogLevel:        "info",
+	LogFile:         "/smtpfiy/log/smtpfiy.log",
+	MaxAuthAttempts: 5,
 	SearchPaths: []string{
 		"/etc/smtpfiy.conf",
 		"/etc/smtpfiy/smtpfiy.yaml",
@@ -47,18 +49,39 @@ var supportedProviders = map[string]bool{
 	"resend": true,
 }
 
+// SMTPAuthUser is a single accepted username/password credential for SMTP AUTH.
+type SMTPAuthUser struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
+// SMTPAuthConfig controls optional SMTP AUTH (PLAIN/LOGIN) on the listener.
+type SMTPAuthConfig struct {
+	// Required, when true, rejects MAIL FROM before successful AUTH with 530.
+	Required bool `yaml:"required"`
+	// Users is the list of accepted credentials. When empty, AUTH is not
+	// advertised and no authentication is required.
+	Users []SMTPAuthUser `yaml:"users"`
+}
+
 // ServerConfig holds global service configuration.
 type ServerConfig struct {
-	Host       string `yaml:"host"`
-	Port       int    `yaml:"port"`
-	SMTPHost   string `yaml:"smtp_host"`
-	SMTPPort   int    `yaml:"smtp_port"`
-	DBPath     string `yaml:"db_path"`
-	Scheduler  string `yaml:"scheduler"`
-	Retry      int    `yaml:"retry"`
-	RetryDelay int    `yaml:"retry_delay"`
-	LogLevel   string `yaml:"log_level"`
-	LogFile    string `yaml:"log_file"`
+	Host       string         `yaml:"host"`
+	Port       int            `yaml:"port"`
+	SMTPHost   string         `yaml:"smtp_host"`
+	SMTPPort   int            `yaml:"smtp_port"`
+	DBPath     string         `yaml:"db_path"`
+	Scheduler  string         `yaml:"scheduler"`
+	Retry      int            `yaml:"retry"`
+	RetryDelay int            `yaml:"retry_delay"`
+	LogLevel   string         `yaml:"log_level"`
+	LogFile    string         `yaml:"log_file"`
+	SMTPAuth   SMTPAuthConfig `yaml:"smtp_auth"`
+}
+
+// SMTPAuthEnabled reports whether SMTP AUTH is configured (at least one user).
+func (c SMTPAuthConfig) SMTPAuthEnabled() bool {
+	return len(c.Users) > 0
 }
 
 // ProviderConfig describes a single provider configured for a sender domain.
@@ -134,12 +157,18 @@ func loadFile(path string) (*rawConfig, error) {
 	return &rc, nil
 }
 
+func serverIsZero(s ServerConfig) bool {
+	return s.Host == "" && s.Port == 0 && s.SMTPHost == "" && s.SMTPPort == 0 &&
+		s.DBPath == "" && s.Scheduler == "" && s.Retry == 0 && s.RetryDelay == 0 &&
+		s.LogLevel == "" && s.LogFile == "" && len(s.SMTPAuth.Users) == 0 && !s.SMTPAuth.Required
+}
+
 // merge applies a single file's contents into the accumulator. It rejects
 // duplicate domain entries rather than silently overwriting them.
 func merge(acc *rawConfig, rc *rawConfig, path string) error {
-	if acc.Server == (ServerConfig{}) {
+	if serverIsZero(acc.Server) {
 		acc.Server = rc.Server
-	} else if rc.Server != (ServerConfig{}) {
+	} else if !serverIsZero(rc.Server) {
 		// Server block may only be defined once across all files.
 		return fmt.Errorf("duplicate server configuration in %q", path)
 	}

@@ -51,13 +51,15 @@ func run(paths ...string) error {
 
 	// SMTP server: stores received messages into the queue.
 	smtpSrv := &SMTPServer{
-		Host:           cfg.Server.SMTPHost,
-		Port:           cfg.Server.SMTPPort,
-		MaxRecipients:  100,
-		MaxMessageSize: 25 * 1024 * 1024,
-		Store:          queue,
-		Logger:         logger,
-		AllowedDomains: domainSet(cfg.Domains),
+		Host:            cfg.Server.SMTPHost,
+		Port:            cfg.Server.SMTPPort,
+		MaxRecipients:   100,
+		MaxMessageSize:  25 * 1024 * 1024,
+		Store:           queue,
+		Logger:          logger,
+		AllowedDomains:  domainSet(cfg.Domains),
+		Auth:            &cfg.Server.SMTPAuth,
+		MaxAuthAttempts: Defaults.MaxAuthAttempts,
 	}
 	if err := smtpSrv.Start(); err != nil {
 		return fmt.Errorf("smtp server error: %w", err)

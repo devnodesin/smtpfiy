@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -45,6 +47,14 @@ type SMTPServer struct {
 	Store          MessageStore
 	Logger         *Logger
 	AllowedDomains map[string]bool
+
+	// Auth, when non-nil and Auth.Users is non-empty, advertises and enforces
+	// SMTP AUTH (PLAIN/LOGIN). When nil or empty, the listener remains fully
+	// unauthenticated (backward compatible).
+	Auth *SMTPAuthConfig
+	// MaxAuthAttempts is the number of failed AUTH attempts allowed before the
+	// connection is closed. Defaults to Defaults.MaxAuthAttempts.
+	MaxAuthAttempts int
 
 	ln net.Listener
 	mu sync.Mutex
@@ -113,7 +123,15 @@ func (s *SMTPServer) handleConn(conn net.Conn) {
 		recipients []string
 		inData     bool
 		dataBuf    strings.Builder
+		authed     bool
+		authTries  int
 	)
+
+	advertiseAuth := s.Auth != nil && s.Auth.SMTPAuthEnabled()
+	maxTries := s.MaxAuthAttempts
+	if maxTries <= 0 {
+		maxTries = Defaults.MaxAuthAttempts
+	}
 
 	for {
 		line, err := r.ReadString('\n')
@@ -153,8 +171,29 @@ func (s *SMTPServer) handleConn(conn net.Conn) {
 		cmd, arg := splitCommand(line)
 		switch strings.ToUpper(cmd) {
 		case "HELO", "EHLO":
-			write("250 smtpfiy\r\n")
+			if strings.ToUpper(cmd) == "EHLO" && advertiseAuth {
+				// Multi-line EHLO reply: intermediate lines use "250-" and the
+				// final line uses "250 " (no dash).
+				write("250-smtpfiy\r\n")
+				write("250 AUTH PLAIN LOGIN\r\n")
+			} else {
+				write("250 smtpfiy\r\n")
+			}
+		case "AUTH":
+			if !advertiseAuth {
+				write("503 AUTH not supported\r\n")
+				continue
+			}
+			ok, closeConn := s.handleAuth(write, r, arg, &authed, &authTries, maxTries)
+			_ = ok
+			if closeConn {
+				return
+			}
 		case "MAIL":
+			if advertiseAuth && s.Auth.Required && !authed {
+				write("530 Authentication required\r\n")
+				continue
+			}
 			addr, ok := parsePath(arg)
 			if !ok {
 				write("501 malformed MAIL FROM\r\n")
@@ -205,7 +244,165 @@ func (s *SMTPServer) handleConn(conn net.Conn) {
 	}
 }
 
-// buildMessage parses the raw DATA and assembles a normalized Message.
+// handleAuth processes an AUTH command (PLAIN or LOGIN). It returns whether the
+// connection should be terminated (after exhausting attempts). The authTries
+// counter is incremented for each failed attempt; once it reaches maxTries the
+// connection is closed with a 421.
+func (s *SMTPServer) handleAuth(
+	write func(string, ...interface{}),
+	r *bufio.Reader,
+	arg string,
+	authed *bool,
+	authTries *int,
+	maxTries int,
+) (ok, closeConn bool) {
+	mech, rest := splitCommand(arg)
+	mech = strings.ToUpper(mech)
+
+	var username, password string
+	var parsed bool
+
+	switch mech {
+	case "PLAIN":
+		username, password, parsed = s.parseAuthPlain(write, r, rest)
+	case "LOGIN":
+		username, password, parsed = s.parseAuthLogin(write, r, rest)
+	default:
+		write("504 unrecognized authentication type\r\n")
+		return false, false
+	}
+
+	if !parsed {
+		// Malformed/aborted challenge; do not count as a failed credential try.
+		return false, false
+	}
+
+	if s.checkCredentials(username, password) {
+		*authed = true
+		if s.Logger != nil {
+			s.Logger.Info("SMTP AUTH success  mechanism=%s user=%s", strings.ToLower(mech), username)
+		}
+		write("235 Authentication successful\r\n")
+		return true, false
+	}
+
+	*authTries++
+	if s.Logger != nil {
+		s.Logger.Warn("SMTP AUTH failure  mechanism=%s user=%s attempt=%d", strings.ToLower(mech), username, *authTries)
+	}
+	if *authTries >= maxTries {
+		write("421 too many failed authentication attempts\r\n")
+		return false, true
+	}
+	write("535 Authentication failed\r\n")
+	return false, false
+}
+
+// checkCredentials compares the supplied credentials against the configured
+// users using constant-time comparison for the password.
+func (s *SMTPServer) checkCredentials(username, password string) bool {
+	for _, u := range s.Auth.Users {
+		if subtle.ConstantTimeCompare([]byte(u.Username), []byte(username)) != 1 {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(u.Password), []byte(password)) == 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// parseAuthPlain parses an AUTH PLAIN argument. The argument may be supplied
+// inline (`AUTH PLAIN <base64>`) or on the following continuation line after a
+// 334 prompt (when the initial argument is empty).
+func (s *SMTPServer) parseAuthPlain(write func(string, ...interface{}), r *bufio.Reader, rest string) (string, string, bool) {
+	b64 := strings.TrimSpace(rest)
+	if b64 == "" {
+		// Server issues a continuation prompt; client sends the blob next.
+		write("334 \r\n")
+		line, err := readLineNoData(r)
+		if err != nil {
+			write("501 authentication aborted\r\n")
+			return "", "", false
+		}
+		b64 = strings.TrimSpace(line)
+	}
+	return decodePlainBlob(b64)
+}
+
+// parseAuthLogin handles the AUTH LOGIN challenge-response sequence. The
+// username and password are each sent base64-encoded on their own line,
+// either inline with the command or as continuation responses.
+func (s *SMTPServer) parseAuthLogin(write func(string, ...interface{}), r *bufio.Reader, rest string) (string, string, bool) {
+	userB64 := strings.TrimSpace(rest)
+	var username string
+	if userB64 == "" {
+		write("334 %s\r\n", base64.StdEncoding.EncodeToString([]byte("Username:")))
+		line, err := readLineNoData(r)
+		if err != nil {
+			write("501 authentication aborted\r\n")
+			return "", "", false
+		}
+		userB64 = strings.TrimSpace(line)
+	}
+	u, ok := b64Decode(userB64)
+	if !ok {
+		write("501 invalid base64 username\r\n")
+		return "", "", false
+	}
+	username = u
+
+	write("334 %s\r\n", base64.StdEncoding.EncodeToString([]byte("Password:")))
+	line, err := readLineNoData(r)
+	if err != nil {
+		write("501 authentication aborted\r\n")
+		return "", "", false
+	}
+	p, ok := b64Decode(strings.TrimSpace(line))
+	if !ok {
+		write("501 invalid base64 password\r\n")
+		return "", "", false
+	}
+	return username, p, true
+}
+
+// decodePlainBlob decodes a base64 AUTH PLAIN blob of the form
+// `\0username\0password`.
+func decodePlainBlob(b64 string) (string, string, bool) {
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return "", "", false
+	}
+	// Expect at least: \0 user \0 pass
+	parts := strings.Split(string(raw), "\x00")
+	if len(parts) < 3 {
+		return "", "", false
+	}
+	// parts[0] is the authorization identity (often empty); use parts[1]/[2].
+	return parts[1], parts[2], true
+}
+
+func b64Decode(s string) (string, bool) {
+	dec, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return "", false
+	}
+	return string(dec), true
+}
+
+// readLineNoData reads a single line from the SMTP reader without interpreting
+// DATA continuation. Used during AUTH challenge-response exchanges.
+func readLineNoData(r *bufio.Reader) (string, error) {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	line = strings.TrimRight(line, "\r\n")
+	if line == "*" {
+		return "", fmt.Errorf("client aborted")
+	}
+	return line, nil
+}
 func (s *SMTPServer) buildMessage(from string, recipients []string, raw string) (Message, error) {
 	headers, body := splitHeadersBody(raw)
 	subject := headers["Subject"]
