@@ -125,3 +125,59 @@ Logs must never contain:
 - Sensitive HTTP headers.
 
 Email addresses may appear in logs (e.g. sender/recipient in delivery events).
+
+## 4. SMTP Server
+
+smtpify accepts email from local applications and containers over SMTP, parses
+each message, and hands a normalized representation to the queue for delivery.
+Implemented in `cmd/smtpify/smtp.go` (package main).
+
+### Listening & binding
+
+- Binds to `server.smtp_host` / `server.smtp_port` (defaults `127.0.0.1:2525`).
+- The SMTP listener MUST bind to localhost by default and MUST NOT become an
+  open relay (never `0.0.0.0` unless explicitly configured by the user).
+
+### Protocol handling
+
+The server implements a minimal SMTP transaction:
+
+- Greets with `220`, handles `HELO`/`EHLO` (replies `250`).
+- `MAIL FROM:<addr>` records the envelope sender; replies `250`.
+- `RCPT TO:<addr>` records each envelope recipient; replies `250` per recipient.
+- `DATA` reads the message body until the terminating `\r\n.\r\n`, replies
+  `250` (message accepted).
+- `RSET` resets the transaction; `QUIT` replies `221` and closes; unknown
+  commands reply `500`/`502`.
+
+### Parsing & normalization
+
+- The `From` header is parsed to determine the **sender domain** used for
+  provider selection. The envelope `MAIL FROM` domain is validated against the
+  configured `domains` (only configured sender domains are accepted).
+- The message is parsed into a normalized internal representation:
+  `Message{ID, From, To[], Cc[], Bcc[], Subject, TextBody, HTMLBody,
+  Headers, RawSize, Domain, CreatedAt}`.
+- A unique message ID is assigned (short random hex, e.g. `8f21a4`).
+
+### Limits & security (untrusted input)
+
+- Connection, message, and recipient-count limits are applied and enforced.
+- Email addresses are canonicalized/validated at the boundary (single address
+  per MAIL FROM / RCPT TO command).
+- SMTP header and CRLF injection are prevented: header values and addresses
+  are validated; raw header lines containing embedded CRLF are rejected.
+
+### Handoff
+
+On a completed `DATA` transaction the parsed `Message` is passed to the queue
+store (see `## 5. Queue`); on success the server replies `250` to the client.
+Delivery (provider selection/send) happens asynchronously via the queue, not
+during the SMTP transaction.
+
+### Logging
+
+On accept, the server emits an `SMTP` log event at `info` level using the
+format from `doc/logging.md`, e.g.
+`SMTP  id:8f21a4 (alerts@example.com -> user@example.net)`, with addresses but
+no body.

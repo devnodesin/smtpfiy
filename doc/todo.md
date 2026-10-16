@@ -26,15 +26,15 @@ Legend: `[ ]` pending · `[x]` done
 
 ---
 
-## 3. SMTP Server (PENDING)
-Spec: `doc/design.md` → SMTP Server; `## SMTP Server` in SPEC.md (to add).
-- [ ] Bind to `smtp_host`/`smtp_port` (default 127.0.0.1:2525, localhost only)
-- [ ] Accept connections; handle HELO/EHLO, MAIL FROM, RCPT TO, DATA
-- [ ] Parse incoming MIME message (headers + body; plain + html)
-- [ ] Determine sender domain from `From`; reject/validate untrusted input
-- [ ] Assign unique message ID; apply connection/size/recipient limits
-- [ ] Prevent CRLF/header injection; canonicalize addresses at boundary
-- [ ] Hand parsed message to the queue (store) stage
+## 3. SMTP Server (DONE)
+Spec: `doc/design.md` → SMTP Server; `## 4. SMTP Server` in SPEC.md (added).
+- [x] Bind to `smtp_host`/`smtp_port` (default 127.0.0.1:2525, localhost only)
+- [x] Accept connections; handle HELO/EHLO, MAIL FROM, RCPT TO, DATA
+- [x] Parse incoming MIME message (headers + body; plain + html)
+- [x] Determine sender domain from `From`; reject/validate untrusted input
+- [x] Assign unique message ID; apply connection/size/recipient limits
+- [x] Prevent CRLF/header injection; canonicalize addresses at boundary
+- [x] Hand parsed message to the queue (store) stage (end-to-end test w/ real client)
 
 ## 4. SQLite Queue (PENDING)
 Spec: `doc/design.md` → SQLite Queue; `## Queue` in SPEC.md (to add).
