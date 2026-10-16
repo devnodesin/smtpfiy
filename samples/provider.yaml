@@ -1,0 +1,7 @@
+domains:
+  example.com:
+    providers:
+      - provider: brevo
+        api_key: "..."
+        limit_daily: 100
+        limit_monthly: 3000

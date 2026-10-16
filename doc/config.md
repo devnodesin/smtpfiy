@@ -12,7 +12,6 @@ Configuration may also be split across multiple files for easier maintenance.
 
 Example: `/etc/smtpfiy.conf` or `/etc/smtpfiy/smtpfiy.yaml`
 
-
 ### Default Configuration Paths
 
 If `-c` is not specified, `smtpfiy` searches:
@@ -22,7 +21,7 @@ If `-c` is not specified, `smtpfiy` searches:
 /etc/smtpfiy/smtpfiy.yaml
 ```
 
-The service  must find at least one valid configuration file.
+The service must find at least one valid configuration file.
 
 ---
 
@@ -36,7 +35,7 @@ smtpfiy -c /etc/mysmtp.yaml
 ## OR
 smtpfiy -c /etc/sdeploy/main.yaml,/etc/sdeploy/providers.yaml
 
-## OR 
+## OR
 
 smtpfiy -c /sdeploy/smtpfiy.conf,/sdeploy/myconfig.yaml
 ```
@@ -149,18 +148,16 @@ server:
   log_file: "/smtpfiy/log/smtpfiy.log"
 ```
 
-| Field         | Description                                |
-| ------------- | ------------------------------------------ |
-| `host`        | HTTP bind address                          |
-| `port`        | HTTP port                                  |
-| `smtp_host`   | SMTP bind address                          |
-| `smtp_port`   | SMTP port                                  |
-| `db_path`     | SQLite database path                       |
-| `scheduler`   | Provider selection method (order|rr)       |
-| `retry`       | Maximum retry attempts; `0` disables retry |
-| `retry_delay` | Delay between retries in seconds           |
-| `log_level`   | `debug`, `info`, `warn`, or `error`        |
-| `log_file`    | Log file path                              |
+- `host` - HTTP bind address (default: 0.0.0.0)
+- `port` - HTTP port (default: 7001)
+- `smtp_host` - SMTP bind address (default: 0.0.0.0)
+- `smtp_port` - SMTP port (default: 2525)
+- `db_path` - SQLite database path (default: `/smtpfiy/data/smtpfiy.db`)
+- `scheduler` - Provider selection method (order|rr) (default: order)
+- `retry` - Maximum retry attempts; 0 disables retry (default: 1)
+- `retry_delay` - Delay between retries in seconds (default: 60)
+- `log_level` - `debug`, `info` (default), `warn`, or `error`
+- `log_file` - Log file path (default: `/smtpfiy/log/smtpfiy.log`)
 
 ### `domains`
 
@@ -176,12 +173,10 @@ domains:
         limit_monthly: 3000
 ```
 
-| Field           | Description                                        |
-| --------------- | -------------------------------------------------- |
-| `provider`      | Provider adapter name                              |
-| `api_key`       | Provider API key                                   |
-| `limit_daily`   | Maximum emails per day                             |
-| `limit_monthly` | Maximum emails per month                           |
+- `provider`: Provider adapter name
+- `api_key`: Provider API key
+- `limit_daily`: Maximum emails per day
+- `limit_monthly`: Maximum emails per month
 
 Provider fallback is always restricted to providers configured for the **same sender domain**.
 
@@ -190,19 +185,7 @@ Provider fallback is always restricted to providers configured for the **same se
 ## Configuration Loading
 
 ```text
--c specified
-    ↓
-load specified files
-    ↓
-validate
-    ↓
-reject duplicates
-    ↓
-merge
-    ↓
-load into memory
-    ↓
-start smtpfiy
+-c specified -> load specified files -> validate -> reject duplicates -> merge -> load into memory -> start smtpfiy
 ```
 
 If no `-c` is provided:
