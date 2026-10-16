@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/smtpify ./cmd/smt
 
 # ---- runtime stage ----
 FROM alpine:3.20
-RUN addgroup -S smtpify && adduser -S smtpify -G smtpify
+RUN addgroup -S -g 1000 smtpify && adduser -S -u 1000 -G smtpify smtpify
 WORKDIR /smtpfiy
 COPY --from=build /out/smtpify /usr/local/bin/smtpify
 USER smtpify
