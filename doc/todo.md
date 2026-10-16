@@ -47,19 +47,14 @@ Spec: `doc/design.md` → SQLite Queue; `## 5. Queue` in SPEC.md (added).
 - [x] Persistence across restarts; parent dir creation
 - [x] Failing-first TDD; `go test -race` green
 
-## 5. Provider Adapters — Resend (PENDING, FIRST PROVIDER)
-Spec: `doc/design.md` → Provider Adapters; `## Provider Adapters` in SPEC.md (to add).
-Resend REST API (verified): `POST https://api.resend.com/emails`,
-`Authorization: Bearer <api_key>`, `Content-Type: application/json`.
-Request body fields: `from` (string), `to` (string|string[]), `subject`,
-`html`, `text`, `cc`, `bcc`, `reply_to`, `headers`, `attachments`, `tags`.
-Success response: `{ "id": "<uuid>" }`. Use TLS/HTTPS; never disable cert check.
-- [ ] `resend` adapter: translate internal message → Resend JSON request
-- [ ] Send via `POST https://api.resend.com/emails` with Bearer auth
-- [ ] Handle response: success → message id; error → classify permanent vs retryable
-- [ ] Apply request/network timeout via `context.Context`
-- [ ] Never log API key or email body (mask via logger)
-- [ ] Unit-test adapter with a mocked HTTP server (failing test first)
+## 5. Provider Adapters — Resend (DONE)
+Spec: `doc/design.md` → Provider Adapters; `## 6. Provider Adapters` in SPEC.md (added).
+- [x] `Provider` interface (`Name`, `Send(ctx, msg)`)
+- [x] Resend adapter: `POST https://api.resend.com/emails`, Bearer auth, JSON
+- [x] Translate Message → Resend request (from/to/subject/text/html/cc/bcc)
+- [x] Success → provider id; error classification (permanent vs retryable)
+- [x] Timeout via context; TLS/HTTPS enforced
+- [x] No API key / body leakage; failing-first TDD w/ httptest mock
 
 ## 6. Provider Selection / Scheduler (PENDING)
 Spec: `doc/design.md` → Provider Selection.

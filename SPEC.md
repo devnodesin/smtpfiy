@@ -229,3 +229,44 @@ A `messages` table tracks each message and its delivery state:
 
 - Email bodies are stored but never returned by `Stats()` or any HTTP endpoint.
 - API keys are never written to the database.
+
+## 6. Provider Adapters (Resend, V1)
+
+smtpify delivers queued messages through provider REST APIs. V1 implements a
+single adapter: **Resend**. Adapters implement the `Provider` interface
+(`cmd/smtpify/provider.go`).
+
+### Interface
+
+```go
+type Provider interface {
+    Name() string
+    Send(ctx context.Context, msg Message) (providerID string, err error)
+}
+```
+
+### Resend adapter
+
+- Endpoint: `POST https://api.resend.com/emails`.
+- Auth: `Authorization: Bearer <api_key>`; `Content-Type: application/json`.
+- Request body (JSON): `from`, `to` (array), `subject`, `html`, `text`, `cc`,
+  `bcc`, `reply_to`, `headers`, `attachments`, `tags`.
+- Success response: `{ "id": "<uuid>" }` → returns that id.
+- Errors are classified as permanent (`401`, `403`, `4xx` other than `429`)
+  vs retryable (`429`, `5xx`, network/timeout). The adapter returns a typed
+  error so the retry engine can decide.
+- Transport uses TLS/HTTPS; certificate verification is never disabled.
+- A request/network timeout is applied via `context.Context` (caller-supplied).
+- API keys and email bodies are never written to logs (use `MaskAndInfo`).
+
+## 7. Provider Selection / Scheduler
+
+Multiple providers may be configured for the same sender domain. Provider
+selection is controlled by `server.scheduler`:
+
+- `order` — try providers in configuration order.
+- `rr` — round-robin selection across the domain's providers.
+
+Provider fallback is restricted to providers configured for the **same sender
+domain**. smtpify must never silently change the sender domain to use another
+provider configuration.
