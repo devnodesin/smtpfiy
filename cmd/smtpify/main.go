@@ -115,8 +115,15 @@ func workerLoop(ctx context.Context, w *DeliveryWorker, logger *Logger) {
 				if err != nil || len(pending) == 0 {
 					break
 				}
-				if err := w.ProcessOne(ctx); err != nil {
-					logger.Error("delivery worker error: %v", err)
+				// Bound each message's processing with a per-attempt context
+				// timeout so a stalled provider request cannot block the loop
+				// indefinitely. The delivery worker applies its own retry
+				// delay, but we cap total work per message here.
+				workCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				procErr := w.ProcessOne(workCtx)
+				cancel()
+				if procErr != nil {
+					logger.Error("delivery worker error: %v", procErr)
 					break
 				}
 			}

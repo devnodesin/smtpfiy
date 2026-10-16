@@ -67,19 +67,51 @@ type Queue struct {
 }
 
 // OpenQueue opens (creating if necessary) the SQLite database and ensures the
-// messages table exists. Parent directories are created as needed.
+// messages table exists. Parent directories are created as needed. The path is
+// validated to prevent directory traversal outside the working directory.
 func OpenQueue(path string) (*Queue, error) {
-	if dir := filepath.Dir(path); dir != "" {
+	if path == "" {
+		return nil, fmt.Errorf("empty db path")
+	}
+
+	// Clean the path (resolves "." and ".." segments) and make it absolute.
+	clean := filepath.Clean(path)
+	abs, err := filepath.Abs(clean)
+	if err != nil {
+		return nil, fmt.Errorf("resolving db path %q: %w", path, err)
+	}
+
+	// Resolve the working directory to bound the allowed path.
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("getting working directory: %w", err)
+	}
+	wdAbs := filepath.Clean(wd)
+
+	// Only reject paths that escape above the working directory. Absolute paths
+	// explicitly configured by the user are allowed; relative paths are bounded
+	// to the working directory (including subdirectories).
+	if !filepath.IsAbs(path) {
+		rel, err := filepath.Rel(wdAbs, abs)
+		if err != nil {
+			return nil, fmt.Errorf("resolving relative db path %q: %w", path, err)
+		}
+		if rel == ".." || len(rel) >= 3 && rel[:3] == "../" {
+			return nil, fmt.Errorf("db path %q escapes working directory", path)
+		}
+	}
+
+	if dir := filepath.Dir(abs); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating db dir %q: %w", dir, err)
 		}
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", abs)
 	if err != nil {
-		return nil, fmt.Errorf("opening db %q: %w", path, err)
+		return nil, fmt.Errorf("opening db %q: %w", abs, err)
 	}
 	db.SetMaxOpenConns(1) // serialize writes; simple and safe for a single relay.
-	q := &Queue{db: db, path: path}
+	q := &Queue{db: db, path: abs}
 	if err := q.initSchema(); err != nil {
 		db.Close()
 		return nil, err

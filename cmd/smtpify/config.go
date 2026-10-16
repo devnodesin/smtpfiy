@@ -163,8 +163,13 @@ func Load(paths ...string) (*Config, error) {
 	found := false
 	acc := &rawConfig{Domains: map[string]DomainConfig{}}
 	for _, p := range resolved {
-		if _, statErr := os.Stat(p); statErr != nil {
+		info, statErr := os.Stat(p)
+		if statErr != nil {
 			continue
+		}
+		// Reject non-regular files (e.g. directories, sockets, devices).
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("config path %q is not a regular file", p)
 		}
 		found = true
 		rc, loadErr := loadFile(p)
