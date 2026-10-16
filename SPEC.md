@@ -45,18 +45,18 @@ The on-disk YAML has two top-level blocks:
   required (fully backward compatible). The number of failed AUTH attempts
   before the connection is closed is controlled by the centralized default
   `MaxAuthAttempts` (5).
-- `server.smtp_tls` — optional STARTTLS block. It has three fields: `enabled`
-  (bool, default `false`), `cert_file` (PEM certificate path), and `key_file`
+- `server.smtp_tls` — optional STARTTLS block. It has four fields: `enabled`
+  (bool, default `false`), `cert_host` (the hostname clients dial; added as a SAN
+  to the generated cert), `cert_file` (PEM certificate path), and `key_file`
   (PEM private-key path). When `enabled: true` and both file paths are empty, an
   in-memory self-signed certificate is generated at startup (logged at `warn`,
-  regenerated on every start); when both paths are set they are loaded, and a
-  load failure fails fast at startup. The self-signed fallback covers
-  `localhost`, the loopback addresses `127.0.0.1`/`::1`, and the configured
-  `smtp_host` (when it is a valid DNS name or IP; wildcards such as `0.0.0.0`
-  are skipped and loopback is used instead), so clients can verify the
-  certificate by the hostname they dial. The generated SANs are logged at `warn`
-  (names only, no key material). When `enabled: false` (or absent) the listener
-  stays plaintext and fully backward compatible.
+  regenerated on every start) covering `cert_host` (falling back to `smtp_host`),
+  plus `localhost` and the loopback addresses `127.0.0.1`/`::1`, so clients can
+  verify the certificate by the hostname they dial. Wildcards and the
+  unspecified address (e.g. `0.0.0.0`) are skipped as SANs, keeping
+  localhost/loopback. The generated SANs are logged at `warn` (names only, no
+  key material). When `enabled: false` (or absent) the listener stays plaintext
+  and fully backward compatible.
 - `domains` — a map of sender domain to a list of `providers`. Each provider
   has `provider` (adapter name), `api_key`, `limit_daily`, `limit_monthly`.
 

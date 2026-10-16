@@ -119,8 +119,9 @@ func (s *SMTPServer) Start() error {
 // SetupTLS bootstraps the TLS configuration used for STARTTLS. When the server
 // has no TLSConfig assigned, this is a no-op. It either loads the cert/key from
 // the configured PEM files or, when both are empty, generates an in-memory
-// self-signed certificate covering the configured smtp_host plus loopback. On
-// load failure it returns a clear error so startup fails fast.
+// self-signed certificate covering the configured TLS cert host (falling back to
+// smtp_host) plus loopback. On load failure it returns a clear error so startup
+// fails fast.
 func (s *SMTPServer) SetupTLS(cfg SMTPTLSConfig, smtpHost string) error {
 	if !cfg.SMTPTLSEnabled() {
 		return nil
@@ -128,7 +129,11 @@ func (s *SMTPServer) SetupTLS(cfg SMTPTLSConfig, smtpHost string) error {
 	if s.TLSConfig != nil {
 		return nil
 	}
-	tlsCfg, err := buildTLSConfig(cfg, smtpHost, s.Logger)
+	certHost := cfg.CertHost
+	if certHost == "" {
+		certHost = smtpHost
+	}
+	tlsCfg, err := buildTLSConfig(cfg, certHost, s.Logger)
 	if err != nil {
 		return err
 	}
@@ -137,7 +142,7 @@ func (s *SMTPServer) SetupTLS(cfg SMTPTLSConfig, smtpHost string) error {
 }
 
 // buildTLSConfig loads or generates the TLS config for STARTTLS.
-func buildTLSConfig(cfg SMTPTLSConfig, smtpHost string, logger *Logger) (*tls.Config, error) {
+func buildTLSConfig(cfg SMTPTLSConfig, certHost string, logger *Logger) (*tls.Config, error) {
 	if cfg.CertFile != "" || cfg.KeyFile != "" {
 		if cfg.CertFile == "" || cfg.KeyFile == "" {
 			return nil, fmt.Errorf("smtp_tls: both cert_file and key_file are required when one is set")
@@ -153,7 +158,7 @@ func buildTLSConfig(cfg SMTPTLSConfig, smtpHost string, logger *Logger) (*tls.Co
 	}
 
 	// Generate an in-memory self-signed certificate.
-	cert, sans, err := generateSelfSignedCert(smtpHost)
+	cert, sans, err := generateSelfSignedCert(certHost)
 	if err != nil {
 		return nil, fmt.Errorf("smtp_tls: generating self-signed cert: %w", err)
 	}

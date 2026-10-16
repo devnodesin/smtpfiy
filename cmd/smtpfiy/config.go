@@ -96,6 +96,11 @@ type SMTPTLSConfig struct {
 	// KeyFile is the path to a PEM private key. When empty together with
 	// CertFile and Enabled is true, an in-memory self-signed cert is generated.
 	KeyFile string `yaml:"key_file"`
+	// CertHost is the hostname clients use to reach the listener; it is added as a
+	// SAN to the generated self-signed certificate so clients can verify by name.
+	// When empty it falls back to the server's smtp_host. Wildcards and the
+	// unspecified address (e.g. 0.0.0.0) are skipped, keeping localhost/loopback.
+	CertHost string `yaml:"cert_host"`
 }
 
 // SMTPTLSEnabled reports whether STARTTLS is configured.
