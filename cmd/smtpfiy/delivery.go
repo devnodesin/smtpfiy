@@ -18,6 +18,10 @@ type DeliveryWorker struct {
 	Resolver    ProviderResolver
 	MaxAttempts int
 	RetryDelay  time.Duration
+	// SendTimeout bounds each individual provider request so a stalled
+	// request cannot block the worker loop. Retry sleeps are not counted
+	// against it (they are capped separately by Defaults.MaxRetryAfter).
+	SendTimeout time.Duration
 	Logger      *Logger
 }
 
@@ -88,7 +92,18 @@ func (w *DeliveryWorker) deliver(ctx context.Context, msg Message, providers []P
 		for attempt < maxAttempts {
 			attempt++
 			lastProvider = p.Name()
-			id, err := p.Send(ctx, msg)
+			// Bound each request so a stalled provider cannot block the loop
+			// indefinitely; retry sleeps below use ctx directly and are not
+			// cut short by this per-attempt timeout.
+			sendCtx := ctx
+			var cancel context.CancelFunc
+			if w.SendTimeout > 0 {
+				sendCtx, cancel = context.WithTimeout(ctx, w.SendTimeout)
+			}
+			id, err := p.Send(sendCtx, msg)
+			if cancel != nil {
+				cancel()
+			}
 			if err == nil {
 				return true, deliverResult{providerName: p.Name(), message: id}
 			}
@@ -103,8 +118,8 @@ func (w *DeliveryWorker) deliver(ctx context.Context, msg Message, providers []P
 			if attempt >= maxAttempts {
 				break
 			}
-			if w.RetryDelay > 0 {
-				if !sleepCtx(ctx, w.RetryDelay) {
+			if wait := w.retryWait(err); wait > 0 {
+				if !sleepCtx(ctx, wait) {
 					return false, deliverResult{providerName: lastProvider, message: ctx.Err().Error()}
 				}
 			}
@@ -123,6 +138,22 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	case <-t.C:
 		return true
 	}
+}
+
+// retryWait returns how long to wait before the next attempt after a
+// retryable error. When the provider suggests a RetryAfter (e.g. Brevo's
+// x-sib-ratelimit-reset on 429), it takes precedence over the fixed
+// retry_delay, capped at the centralized Defaults.MaxRetryAfter.
+func (w *DeliveryWorker) retryWait(err error) time.Duration {
+	wait := w.RetryDelay
+	var perr *ProviderError
+	if asProviderError(err, &perr) && perr.RetryAfter > 0 {
+		wait = perr.RetryAfter
+		if cap := time.Duration(Defaults.MaxRetryAfter) * time.Second; cap > 0 && wait > cap {
+			wait = cap
+		}
+	}
+	return wait
 }
 
 func errMessage(err error) string {

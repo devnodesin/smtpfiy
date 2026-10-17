@@ -82,6 +82,7 @@ func run(paths ...string) error {
 		Resolver:    resolver,
 		MaxAttempts: cfg.Server.Retry,
 		RetryDelay:  time.Duration(cfg.Server.RetryDelay) * time.Second,
+		SendTimeout: time.Duration(Defaults.SendTimeout) * time.Second,
 		Logger:      logger,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -120,13 +121,12 @@ func workerLoop(ctx context.Context, w *DeliveryWorker, logger *Logger) {
 				if err != nil || len(pending) == 0 {
 					break
 				}
-				// Bound each message's processing with a per-attempt context
-				// timeout so a stalled provider request cannot block the loop
-				// indefinitely. The delivery worker applies its own retry
-				// delay, but we cap total work per message here.
-				workCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				procErr := w.ProcessOne(workCtx)
-				cancel()
+				// Each provider request is bounded by the worker's SendTimeout
+				// so a stalled request cannot block the loop indefinitely.
+				// Retry waits (RetryAfter / retry_delay) run on the long-lived
+				// ctx and are capped by Defaults.MaxRetryAfter, so they are
+				// honored instead of being cut short by a per-message budget.
+				procErr := w.ProcessOne(ctx)
 				if procErr != nil {
 					logger.Error("delivery worker error: %v", procErr)
 					break

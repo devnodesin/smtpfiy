@@ -118,7 +118,7 @@ Before use, the merged configuration is validated:
 - `scheduler` must be one of `order` or `rr`.
 - At least one sender domain must be configured.
 - Each domain must have at least one provider.
-- Only supported providers are accepted (V1: `resend`).
+- Only supported providers are accepted (V2: `resend`, `brevo`).
 - A provider's `api_key` must be non-empty.
 - `log_level` must be one of `debug`, `info`, `warn`, `error` (see Logging).
 - API keys are masked (`***`) wherever configuration is rendered for diagnostics;
@@ -294,10 +294,10 @@ A `messages` table tracks each message and its delivery state:
 - Email bodies are stored but never returned by `Stats()` or any HTTP endpoint.
 - API keys are never written to the database.
 
-## 6. Provider Adapters (Resend, V1)
+## 6. Provider Adapters (Resend, Brevo)
 
-smtpfiy delivers queued messages through provider REST APIs. V1 implements a
-single adapter: **Resend**. Adapters implement the `Provider` interface
+smtpfiy delivers queued messages through provider REST APIs. V2 implements two
+adapters: **Resend** and **Brevo**. Adapters implement the `Provider` interface
 (`cmd/smtpfiy/provider.go`).
 
 ### Interface
@@ -319,8 +319,36 @@ type Provider interface {
 - Errors are classified as permanent (`401`, `403`, `4xx` other than `429`)
   vs retryable (`429`, `5xx`, network/timeout). The adapter returns a typed
   error so the retry engine can decide.
+- A request/network timeout is applied via `context.Context` (the delivery
+  worker bounds each request with `Defaults.SendTimeout`).
+- Provider error bodies are sanitized (control characters stripped,
+  length-bounded) before logging or storage.
+- API keys and email bodies are never written to logs (use `MaskAndInfo`).
+
+### Brevo adapter
+
+- Endpoint: `POST https://api.brevo.com/v3/smtp/email`.
+- Auth: `api-key: <api_key>` header (not `Authorization: Bearer`);
+  `Content-Type: application/json`.
+- Request body (JSON): `sender` (`{email}` from the message `From`), `to`
+  (array of `{email}`), `subject`, `htmlContent`, `textContent`, `cc`, `bcc`
+  (arrays of `{email}`). Custom message headers are NOT forwarded in V2;
+  recipient display names are empty.
+- Success response: HTTP `201` with `{ "messageId": "<...>" }` → returns that
+  messageId.
+- Errors are classified as permanent (`401`, `403`, `4xx` other than `429`)
+  vs retryable (`429`, `5xx`, network/timeout). The adapter returns a typed
+  error so the retry engine can decide.
+- **Rate-limit aware retry:** on `429` the adapter reads the
+  `x-sib-ratelimit-reset` response header (seconds until the limit resets; see
+  Brevo's rate-limit headers docs) and sets `ProviderError.RetryAfter` to that
+  duration. The retry engine prefers this over the fixed `retry_delay` (see
+  `## 8. Retry Engine`).
 - Transport uses TLS/HTTPS; certificate verification is never disabled.
-- A request/network timeout is applied via `context.Context` (caller-supplied).
+- A request/network timeout is applied via `context.Context` (the delivery
+  worker bounds each request with `Defaults.SendTimeout`).
+- Provider error bodies are sanitized (control characters stripped,
+  length-bounded) before logging or storage.
 - API keys and email bodies are never written to logs (use `MaskAndInfo`).
 
 ## 7. Provider Selection / Scheduler
@@ -360,6 +388,20 @@ queue and attempts delivery through the selected provider(s), applying retries.
 - A **retryable** failure (`429`, `5xx`, network/timeout) triggers a retry after
   `server.retry_delay` seconds, up to `server.retry` total attempts. `retry: 0`
   disables retries (message fails after the first attempt).
+- **Rate-limit aware retry:** when a retryable error carries a `RetryAfter`
+  (set by the Brevo adapter from `x-sib-ratelimit-reset` on `429`), the worker
+  waits that duration instead of the fixed `retry_delay`. The wait is capped at
+  the centralized default `Defaults.MaxRetryAfter` (300 seconds) so a
+  misbehaving reset value cannot stall the worker indefinitely. Providers that
+  do not set `RetryAfter` keep the fixed `retry_delay` behavior.
+- Each individual provider request is bounded by the centralized default
+  `Defaults.SendTimeout` (30 seconds); a stalled request cannot block the
+  worker loop. Retry waits run against the long-lived worker context and are
+  not cut short by that per-attempt timeout, so waits up to
+  `Defaults.MaxRetryAfter` are honored.
+- Provider error bodies are sanitized before logging or storage: control
+  characters (e.g. CR/LF) are stripped and the message is length-bounded, so
+  an untrusted provider response cannot inject log lines.
 - A **permanent** failure (`401`, `403`, other `4xx`) is NOT retried; the
   message is marked failed immediately.
 - After all attempts/providers are exhausted without success, the message is
@@ -437,7 +479,7 @@ runs them as coordinated background services with graceful shutdown:
 2. Initialize the logger from config (`log_level`, `log_file`).
 3. Open the SQLite queue at `db_path`.
 4. Build the `Scheduler` and a `ProviderResolver` that resolves each domain's
-   configured providers (V1: `resend`).
+   configured providers (V2: `resend`, `brevo`).
 5. Start the SMTP server (binds `smtp_host`/`smtp_port`); on `DATA` it stores
    the parsed message via the queue and emits an `SMTP` log event.
 6. Start the HTTP server (binds `host`/`port`) for `/health` and `/stats`.

@@ -25,6 +25,8 @@ var Defaults = struct {
 	LogFile         string
 	SearchPaths     []string
 	MaxAuthAttempts int
+	MaxRetryAfter   int
+	SendTimeout     int
 }{
 	Host:            "127.0.0.1",
 	Port:            7001,
@@ -37,16 +39,19 @@ var Defaults = struct {
 	LogLevel:        "info",
 	LogFile:         "/smtpfiy/log/smtpfiy.log",
 	MaxAuthAttempts: 5,
+	MaxRetryAfter:   300,
+	SendTimeout:     30,
 	SearchPaths: []string{
 		"/etc/smtpfiy.conf",
 		"/etc/smtpfiy/smtpfiy.yaml",
 	},
 }
 
-// supportedProviders is the set of provider adapters recognized by V1.
-// Resend is the only configured adapter initially; others will be added later.
+// supportedProviders is the set of provider adapters recognized by V2.
+// Resend and Brevo are the configured adapters; others will be added later.
 var supportedProviders = map[string]bool{
 	"resend": true,
+	"brevo":  true,
 }
 
 // SMTPAuthUser is a single accepted username/password credential for SMTP AUTH.

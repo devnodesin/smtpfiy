@@ -167,12 +167,32 @@ func TestValidateUnsupportedProvider(t *testing.T) {
 domains:
   example.com:
     providers:
-      - provider: brevo
+      - provider: mailgun
         api_key: "k"
 `)
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected unsupported provider error, got nil")
+	}
+}
+
+func TestLoadBrevoProvider(t *testing.T) {
+	path := writeTemp(t, "brevo.yaml", `
+domains:
+  example.com:
+    providers:
+      - provider: brevo
+        api_key: "xkeysib-123"
+        limit_daily: 100
+        limit_monthly: 3000
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	p := cfg.Domains["example.com"].Providers[0]
+	if p.Provider != "brevo" || p.APIKey != "xkeysib-123" {
+		t.Fatalf("unexpected brevo provider: %+v", p)
 	}
 }
 

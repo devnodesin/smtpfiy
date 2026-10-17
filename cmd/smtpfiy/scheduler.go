@@ -22,13 +22,16 @@ func NewScheduler(strategy string) *Scheduler {
 	}
 }
 
-// providerFactory builds a Provider from a provider config. Only "resend" is
-// implemented in V1; other providers return a stub so selection/ordering logic
-// is exercised and fails clearly at send time until implemented.
+// providerFactory builds a Provider from a provider config. "resend" and
+// "brevo" are implemented in V2; other providers return a stub so
+// selection/ordering logic is exercised and fails clearly at send time until
+// implemented.
 func providerFactory(cfg ProviderConfig) (Provider, error) {
 	switch cfg.Provider {
 	case "resend":
 		return NewResendProvider(cfg.APIKey, "", 0), nil
+	case "brevo":
+		return NewBrevoProvider(cfg.APIKey, "", 0), nil
 	default:
 		return &unsupportedProvider{name: cfg.Provider}, nil
 	}

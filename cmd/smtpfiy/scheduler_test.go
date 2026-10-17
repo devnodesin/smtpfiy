@@ -73,3 +73,18 @@ func TestSchedulerNoProvidersError(t *testing.T) {
 		t.Fatal("expected error for domain with no providers")
 	}
 }
+
+func TestSchedulerBuildsBrevoProvider(t *testing.T) {
+	s := NewScheduler("order")
+	cfgs := providerConfigs("brevo")
+	order := s.Select("example.com", cfgs)
+	if len(order) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(order))
+	}
+	if _, ok := order[0].(*brevoProvider); !ok {
+		t.Fatalf("expected *brevoProvider, got %T", order[0])
+	}
+	if order[0].Name() != "brevo" {
+		t.Fatalf("expected name brevo, got %q", order[0].Name())
+	}
+}

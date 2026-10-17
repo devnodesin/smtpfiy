@@ -4,14 +4,12 @@
 domains:
   example.com:
     providers:
-      # Primary provider (Resend, V1 reference adapter).
+      # Primary provider (Resend).
       - provider: resend
         api_key: "re_your_api_key_here"
         limit_daily: 100
         limit_monthly: 3000
-      # Fallback provider for the same sender domain.
-      # (Adapter not yet implemented in V1; configured to demonstrate
-      # per-domain fallback ordering. Remove if unused.)
+      # Fallback provider for the same sender domain (Brevo).
       - provider: brevo
         api_key: "brevo_your_api_key_here"
         limit_daily: 100
